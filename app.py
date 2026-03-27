@@ -5,8 +5,9 @@ import hashlib
 import subprocess
 import logging
 from datetime import datetime
+from functools import wraps
 import yaml
-from flask import Flask, render_template, request, make_response, jsonify
+from flask import Flask, render_template, request, make_response, jsonify, session, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFProtect
@@ -59,6 +60,14 @@ config_path = os.path.join(BASE_DIR, 'config.yaml')
 with open(config_path, 'r') as config_file:
     config_data = yaml.safe_load(config_file)
     SCENARIOS = config_data.get('scenarios', [])
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('admin_logged_in'):
+            return redirect(url_for('admin_login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.after_request
 def add_security_and_cache_headers(response):
@@ -129,7 +138,7 @@ def index():
     """
     API Endpoint: GET/POST /
     Description: 
-        - GET: Renders the QA portal interface loaded with scenarios from config.yaml.
+        - GET: Renders the QA portal interface grouped by scenario sets.
         - POST: Processes QA form submissions, formats data, and securely saves it to the database.
     Validation: Enforces basic input checks for tester name, date, and duration.
     Returns: 
@@ -137,18 +146,32 @@ def index():
         - 400 Bad Request: Invalid or missing form data.
         - 500 Internal Server Error: Database failure.
     """
+    
+    # Group scenarios by their prefix (e.g., TS-A) for the frontend logic
+    scenario_sets = {}
+    for scenario in SCENARIOS:
+        set_prefix = scenario['id'].rsplit('-', 1)[0]
+        if set_prefix not in scenario_sets:
+            scenario_sets[set_prefix] = []
+        scenario_sets[set_prefix].append(scenario)
+        
     if request.method == 'POST':
         # Sanitize and validate basic inputs (Checklist 7.1, 7.5)
         tester_name = request.form.get('tester_name', '').strip()
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
+        selected_sets = request.form.getlist('selected_sets')
         
-        if not tester_name or not test_date or not duration.isdigit():
+        if not tester_name or not test_date or not duration.isdigit() or not selected_sets:
             logging.warning("Invalid input data submitted.")
-            return "Invalid data provided", 400
+            return "Invalid data provided. Make sure to select at least one scenario set.", 400
 
         results = {}
         for scenario in SCENARIOS:
+            set_prefix = scenario['id'].rsplit('-', 1)[0]
+            if set_prefix not in selected_sets:
+                continue
+                
             s_id = scenario['id']
             steps_data = []
             
@@ -181,7 +204,44 @@ def index():
             # Ensure no internal errors are leaked (Checklist 3.4)
             return "An error occurred while saving submission.", 500
 
-    return render_template('index.html', scenarios=SCENARIOS)
+    return render_template('index.html', scenario_sets=scenario_sets)
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    """Secure endpoint for admin authentication."""
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        admin_pass = os.environ.get('ADMIN_PASSWORD', 'fallback_admin_password')
+        
+        # Prevent timing attacks using compare_digest
+        if hmac.compare_digest(password.encode('utf-8'), admin_pass.encode('utf-8')):
+            session['admin_logged_in'] = True
+            return redirect(url_for('admin_dashboard'))
+            
+        return render_template('admin_login.html', error="Invalid credentials.")
+        
+    return render_template('admin_login.html')
+
+@app.route('/admin/logout')
+def admin_logout():
+    """Clears the admin session."""
+    session.pop('admin_logged_in', None)
+    return redirect(url_for('index'))
+
+@app.route('/admin', methods=['GET'])
+@login_required
+def admin_dashboard():
+    """Protected endpoint to view submissions."""
+    submissions = TestSubmission.query.order_by(TestSubmission.submission_time.desc()).all()
+    
+    # Parse JSON strings back into dictionaries for Jinja rendering
+    for sub in submissions:
+        try:
+            sub.parsed_data = json.loads(sub.test_data)
+        except json.JSONDecodeError:
+            sub.parsed_data = {}
+            
+    return render_template('admin.html', submissions=submissions)
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']

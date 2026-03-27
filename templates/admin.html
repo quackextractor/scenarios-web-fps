@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submissions Dashboard - INDUSTRIALIST QA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .dashboard-header { background-color: #212529; color: white; padding: 1rem 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .status-pass { color: #198754; font-weight: bold; }
+        .status-fail { color: #dc3545; font-weight: bold; }
+        .status-hard { color: #fd7e14; font-weight: bold; }
+        .status-none { color: #adb5bd; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-header mb-5">
+    <div class="container d-flex justify-content-between align-items-center">
+        <h3 class="mb-0">QA Submissions Dashboard</h3>
+        <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+    </div>
+</div>
+
+<div class="container pb-5">
+    {% if not submissions %}
+        <div class="alert alert-info text-center">No submissions found in the database.</div>
+    {% else %}
+        <div class="accordion shadow-sm" id="submissionsAccordion">
+            {% for sub in submissions %}
+            <div class="accordion-item border-0 border-bottom">
+                <h2 class="accordion-header" id="heading-{{ sub.id }}">
+                    <button class="accordion-button collapsed py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ sub.id }}" aria-expanded="false" aria-controls="collapse-{{ sub.id }}">
+                        <div class="w-100 d-flex justify-content-between align-items-center pe-3">
+                            <span><strong>{{ sub.tester_name }}</strong> <span class="text-muted ms-2">| {{ sub.test_date }}</span></span>
+                            <span class="badge bg-secondary rounded-pill">{{ sub.duration }} mins</span>
+                        </div>
+                    </button>
+                </h2>
+                <div id="collapse-{{ sub.id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ sub.id }}" data-bs-parent="#submissionsAccordion">
+                    <div class="accordion-body bg-light">
+                        <div class="mb-3 text-muted small">Submitted System Time: {{ sub.submission_time.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+                        
+                        {% for scenario_id, data in sub.parsed_data.items() %}
+                        <div class="card mb-3 border-0 shadow-sm">
+                            <div class="card-header bg-white fw-bold text-primary">
+                                Scenario: {{ scenario_id }}
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <h6 class="fw-bold text-secondary">Steps Breakdown</h6>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        {% for step in data.steps %}
+                                            {% if step == 'pass' %}
+                                                <span class="badge bg-success border">Step {{ loop.index }}: Pass</span>
+                                            {% elif step == 'fail' %}
+                                                <span class="badge bg-danger border">Step {{ loop.index }}: Fail</span>
+                                            {% elif step == 'hard' %}
+                                                <span class="badge bg-warning text-dark border">Step {{ loop.index }}: Hard</span>
+                                            {% else %}
+                                                <span class="badge bg-light text-muted border">Step {{ loop.index }}: Skipped</span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-danger">Issue Log</h6>
+                                        <div class="p-2 border rounded bg-white min-vh-25">
+                                            {{ data.issue_log if data.issue_log else '<span class="text-muted italic">No issues reported.</span>'|safe }}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6 class="fw-bold text-info">General Observations</h6>
+                                        <div class="p-2 border rounded bg-white min-vh-25">
+                                            {{ data.observations if data.observations else '<span class="text-muted italic">No observations provided.</span>'|safe }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
