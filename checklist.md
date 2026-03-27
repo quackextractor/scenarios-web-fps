@@ -17,7 +17,7 @@
 * [ ] 2.3 The repo contains a lock file (e.g., package-lock.json).
 * [ ] 2.4 The team regularly checks for dependency updates.
 * [ ] 2.5 The team records the reason for using each external library.
-* [ ] 2.6 Unused libraries have been removed from the project.
+* [x] 2.6 Unused libraries have been removed from the project.
 
 ## 3. API
 
@@ -33,10 +33,10 @@
 
 * [ ] 4.1 Images are optimized and have an appropriate size.
 * [ ] 4.2 Images use modern formats (e.g., WebP).
-* [ ] 4.3 Unused CSS and JavaScript have been removed.
+* [x] 4.3 Unused CSS and JavaScript have been removed.
 * [x] 4.4 JavaScript and CSS files are minified.
 * [ ] 4.5 The number of HTTP requests upon page load has been analyzed.
-* [ ] 4.6 Large files are loaded only when needed (lazy loading).
+* [x] 4.6 Large files are loaded only when needed (lazy loading).
 * [ ] 4.7 Static files are distributed via a CDN (Content Delivery Network).
 * [x] 4.8 The server uses compression for transferred data.
 * [ ] 4.9 Performance measurement was conducted using the Lighthouse tool.
@@ -55,7 +55,7 @@
 * [x] 6.1 The page has a set title.
 * [x] 6.2 The page has a meta description.
 * [x] 6.3 The page uses the correct heading structure.
-* [ ] 6.4 Images have an alt attribute.
+* [x] 6.4 Images have an alt attribute.
 * [x] 6.5 The page is usable on mobile devices.
 
 ## 7. Security
@@ -72,7 +72,7 @@
 
 * [ ] 8.1 The application was tested in multiple browsers.
 * [ ] 8.2 The application was tested on a mobile device.
-* [ ] 8.3 A test of invalid inputs was performed.
+* [x] 8.3 A test of invalid inputs was performed.
 * [ ] 8.4 A test with multiple concurrent players was performed.
 * [ ] 8.5 A basic performance test of the server was performed.
 * [ ] 8.6 Found errors were recorded in the issue tracker.
@@ -82,9 +82,9 @@
 * [x] 9.1 The application writes errors to a log.
 * [x] 9.2 Logs contain the time of the error and the type of error.
 * [ ] 9.3 Logs are available to the team for analysis.
-* [ ] 9.4 The team monitors the number of players and games.
+* [x] 9.4 The team monitors the number of players and games.
 * [ ] 9.5 A traffic analytics tool is deployed.
-* [ ] 9.6 A tool for checking website availability (uptime monitoring) is used.
+* [x] 9.6 A tool for checking website availability (uptime monitoring) is used.
 
 ## 10. Deployment
 

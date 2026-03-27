@@ -6,7 +6,7 @@ import subprocess
 import logging
 from datetime import datetime
 import yaml
-from flask import Flask, render_template, request, make_response
+from flask import Flask, render_template, request, make_response, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFProtect
@@ -71,6 +71,20 @@ def add_security_and_cache_headers(response):
     if 'Cache-Control' not in response.headers:
         response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """API Endpoint: GET /health for uptime monitoring (Checklist 9.6)"""
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
+
+@app.route('/stats', methods=['GET'])
+def stats():
+    """API Endpoint: GET /stats for monitoring (Checklist 9.4)"""
+    try:
+        total = TestSubmission.query.count()
+        return jsonify({"total_submissions": total}), 200
+    except Exception:
+        return jsonify({"error": "Database error"}), 500
 
 @app.route('/update_server', methods=['POST'])
 @csrf.exempt # Webhooks rely on HMAC, not CSRF tokens
