@@ -9,6 +9,7 @@
     <style>
         .scenario-card { margin-bottom: 2rem; border: 1px solid #dee2e6; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .table-radio { text-align: center; vertical-align: middle; }
+        .table-radio label { cursor: pointer; display: block; width: 100%; height: 100%; margin-bottom: 0; padding: 0.5rem 0; }
         .dotted-textarea {
             background-image: linear-gradient(to right, transparent 10px, transparent 10px), linear-gradient(to left, transparent 10px, transparent 10px), repeating-linear-gradient(white, white 30px, #ccc 30px, #ccc 31px, white 31px);
             line-height: 31px;
@@ -35,16 +36,16 @@
         <div class="card mb-4 shadow-sm">
             <div class="card-body row g-3">
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">Tester Name</label>
-                    <input type="text" name="tester_name" class="form-control" required>
+                    <label class="form-label fw-bold" for="tester_name">Tester Name</label>
+                    <input type="text" id="tester_name" name="tester_name" class="form-control" required>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">Date</label>
-                    <input type="date" name="test_date" class="form-control" required>
+                    <label class="form-label fw-bold" for="test_date">Date</label>
+                    <input type="date" id="test_date" name="test_date" class="form-control" required>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">Duration (Minutes)</label>
-                    <input type="number" name="duration" class="form-control" required>
+                    <label class="form-label fw-bold" for="duration">Duration (Minutes)</label>
+                    <input type="number" id="duration" name="duration" class="form-control" required>
                 </div>
             </div>
         </div>
@@ -63,9 +64,9 @@
                             <th style="width: 5%;">Step</th>
                             <th style="width: 35%;">Action to Perform</th>
                             <th style="width: 30%;">Expected Result</th>
-                            <th class="text-center" style="width: 10%;">✓</th>
-                            <th class="text-center" style="width: 10%;">✗</th>
-                            <th class="text-center" style="width: 10%;">~</th>
+                            <th class="text-center" style="width: 10%;" title="Pass">✓</th>
+                            <th class="text-center" style="width: 10%;" title="Fail">✗</th>
+                            <th class="text-center" style="width: 10%;" title="Needs Work / Difficult">~</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -74,21 +75,33 @@
                             <td class="text-center fw-bold">{{ loop.index }}</td>
                             <td>{{ step.action }}</td>
                             <td class="text-muted small">{{ step.expected }}</td>
-                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" required class="form-check-input"></td>
-                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input"></td>
-                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input"></td>
+                            <td class="table-radio p-0">
+                                <label for="{{ scenario.id }}_step_{{ loop.index0 }}_pass" title="Pass">
+                                    <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" required class="form-check-input m-0">
+                                </label>
+                            </td>
+                            <td class="table-radio p-0">
+                                <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
+                                    <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0">
+                                </label>
+                            </td>
+                            <td class="table-radio p-0">
+                                <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
+                                    <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0">
+                                </label>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
 
                 <div class="mt-4">
-                    <label class="form-label fw-bold text-danger">Issue Log (Explain any ✗ or ~)</label>
-                    <textarea name="{{ scenario.id }}_issue" class="form-control dotted-textarea" rows="4" placeholder="Write issues here..."></textarea>
+                    <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any ✗ or ~)</label>
+                    <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control dotted-textarea" rows="4" placeholder="Write issues here..."></textarea>
                 </div>
                 <div class="mt-4">
-                    <label class="form-label fw-bold text-primary">General Observations</label>
-                    <textarea name="{{ scenario.id }}_obs" class="form-control" style="height: 100px;" placeholder="UI confusion, visual glitches, unexpected behaviors..."></textarea>
+                    <label class="form-label fw-bold text-primary" for="{{ scenario.id }}_obs">General Observations</label>
+                    <textarea id="{{ scenario.id }}_obs" name="{{ scenario.id }}_obs" class="form-control" style="height: 100px;" placeholder="UI confusion, visual glitches, unexpected behaviors..."></textarea>
                 </div>
             </div>
         </div>
