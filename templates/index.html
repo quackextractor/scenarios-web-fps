@@ -73,7 +73,7 @@
             <h3 class="mb-4 pb-2 border-bottom text-primary">Testing Suite: {{ set_name }}</h3>
             
             {% for scenario in scenarios %}
-            <div class="card scenario-card bg-white">
+            <div class="card scenario-card bg-white" data-scenario-id="{{ scenario.id }}">
                 <div class="card-header bg-dark text-white">
                     <h5 class="mb-0">{{ scenario.id }}: {{ scenario.title }}</h5>
                 </div>
@@ -105,12 +105,12 @@
                                     </label>
                                 </td>
                                  <td class="table-radio p-0">
-                                    <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
+                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" disabled>
                                     </label>
                                 </td>
                                 <td class="table-radio p-0">
-                                    <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
+                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" disabled>
                                     </label>
                                 </td>
@@ -121,7 +121,7 @@
 
                     <div class="mt-4">
                         <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any failed or hard steps)</label>
-                        <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control input-toggle" rows="3" placeholder="Write issues here..." disabled></textarea>
+                        <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control input-toggle issue-textarea" rows="3" placeholder="Write issues here..." disabled></textarea>
                     </div>
                     <div class="mt-4">
                         <label class="form-label fw-bold text-primary" for="{{ scenario.id }}_obs">General Observations</label>
@@ -141,7 +141,7 @@
 </div>
 
 <script>
-    // Handle toggling of scenario sets
+    // Handle toggling of scenario sets and requirement logic
     document.querySelectorAll('.set-selector').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
             const container = document.getElementById('container_' + this.value);
@@ -152,9 +152,40 @@
                 inputs.forEach(input => input.disabled = false);
             } else {
                 container.classList.add('d-none');
-                inputs.forEach(input => input.disabled = true);
+                inputs.forEach(input => {
+                    input.disabled = true;
+                    if (input.type === 'radio') input.checked = false;
+                    else input.value = '';
+                });
             }
         });
+    });
+
+    // Dynamic validation for the Issue Log
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('step-radio')) {
+            const scenarioCard = e.target.closest('.scenario-card');
+            const scenarioId = scenarioCard.dataset.scenarioId;
+            const issueTextarea = document.getElementById(scenarioId + '_issue');
+            
+            const allRadios = scenarioCard.querySelectorAll('.step-radio');
+            let requiresExplanation = false;
+            
+            allRadios.forEach(radio => {
+                if (radio.checked && (radio.value === 'fail' || radio.value === 'hard')) {
+                    requiresExplanation = true;
+                }
+            });
+            
+            issueTextarea.required = requiresExplanation;
+            
+            // Visual feedback for required field
+            if (requiresExplanation) {
+                issueTextarea.classList.add('border-danger');
+            } else {
+                issueTextarea.classList.remove('border-danger');
+            }
+        }
     });
 
     function exportPDF() {

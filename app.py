@@ -45,7 +45,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 class TestSubmission(db.Model):
-    id = db.Model.id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     tester_name = db.Column(db.String(100), nullable=False)
     test_date = db.Column(db.String(20), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
@@ -221,6 +221,33 @@ def admin_dashboard():
             sub.parsed_data = {}
             
     return render_template('admin.html', submissions=submissions)
+
+@app.route('/admin/export/json', methods=['GET'])
+@login_required
+def export_json():
+    """Exports all submissions from the database as a JSON file."""
+    submissions = TestSubmission.query.all()
+    export_data = []
+    
+    for sub in submissions:
+        try:
+            parsed_test_data = json.loads(sub.test_data)
+        except json.JSONDecodeError:
+            parsed_test_data = {}
+            
+        export_data.append({
+            "id": sub.id,
+            "tester_name": sub.tester_name,
+            "test_date": sub.test_date,
+            "duration_minutes": sub.duration,
+            "submission_time": sub.submission_time.isoformat(),
+            "results": parsed_test_data
+        })
+    
+    response = make_response(jsonify(export_data))
+    response.headers["Content-Disposition"] = "attachment; filename=industrialist_qa_export.json"
+    response.headers["Content-Type"] = "application/json"
+    return response
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']
