@@ -2,6 +2,10 @@ from flask import Flask, render_template, request
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import json
+import hmac
+import hashlib
+import subprocess
+import os
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_qa_key'
@@ -129,6 +133,28 @@ SCENARIOS = [
         ]
     }
 ]
+
+@app.route('/update_server', methods=['POST'])
+def webhook():
+    if request.method == 'POST':
+        signature = request.headers.get('X-Hub-Signature-256')
+        if not signature:
+            return "Missing signature", 400
+
+        secret = bytes('YOUR_SECRET_TOKEN', 'utf-8')
+        mac = hmac.new(secret, msg=request.data, digestmod=hashlib.sha256)
+        expected_signature = "sha256=" + mac.hexdigest()
+        
+        if not hmac.compare_digest(expected_signature, signature):
+            return "Invalid signature", 403
+
+        repo_dir = '/home/yourusername/mysite'
+        subprocess.call(['git', 'pull'], cwd=repo_dir)
+        
+        wsgi_file = '/var/www/yourusername_pythonanywhere_com_wsgi.py'
+        os.utime(wsgi_file, None)
+        
+        return "Updated PythonAnywhere successfully", 200
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
