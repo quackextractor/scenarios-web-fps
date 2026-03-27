@@ -9,12 +9,23 @@ import os
 import yaml
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Calculate the absolute path of the directory containing app.py
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load environment variables using the absolute path to .env
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret_key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///qa_database.db')
+
+# Construct absolute path for the SQLite database to avoid directory confusion
+db_uri = os.environ.get('DATABASE_URI', 'sqlite:///qa_database.db')
+if db_uri.startswith('sqlite:///'):
+    db_path = os.path.join(BASE_DIR, db_uri.replace('sqlite:///', ''))
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+    
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -30,8 +41,11 @@ class TestSubmission(db.Model):
 with app.app_context():
     db.create_all()
 
+# Create the absolute path to your config file
+config_path = os.path.join(BASE_DIR, 'config.yaml')
+
 # Load scenarios from config.yaml
-with open('config.yaml', 'r') as config_file:
+with open(config_path, 'r') as config_file:
     config_data = yaml.safe_load(config_file)
     SCENARIOS = config_data.get('scenarios', [])
 
