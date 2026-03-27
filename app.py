@@ -6,10 +6,15 @@ import hmac
 import hashlib
 import subprocess
 import os
+import yaml
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'super_secret_qa_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///qa_database.db'
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret_key')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI', 'sqlite:///qa_database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -25,114 +30,10 @@ class TestSubmission(db.Model):
 with app.app_context():
     db.create_all()
 
-SCENARIOS = [
-    {
-        "id": "TS-A-01",
-        "title": "First Blood & Loot Collection",
-        "context": "Enemies drop vital resources for the factory upon death. We need to ensure the physics and pickup detection are intuitive.",
-        "steps": [
-            {"action": "Click 'Play' on the Main Menu and select 'Level 1: Entry'.", "expected": ""},
-            {"action": "Navigate through the level using WASD and Mouse until you locate a brown enemy (Imp).", "expected": ""},
-            {"action": "Use the Pistol (Left Click) to defeat the Imp.", "expected": "The Imp dies and drops a Red Ore pickup exactly where it perished."},
-            {"action": "Walk directly over the Red Ore.", "expected": "The ore disappears, and your HUD's loot counter updates to show 1 Red Ore."}
-        ]
-    },
-    {
-        "id": "TS-A-02",
-        "title": "A* Pathfinding & Corner Navigation",
-        "context": "Enemies use A* pathfinding. We are testing if they can smoothly navigate sharp corners without clipping into walls.",
-        "steps": [
-            {"action": "In Level 1, find an enemy and fire a shot to alert them, causing them to chase you.", "expected": ""},
-            {"action": "Retreat behind a sharp 90-degree wall corner and wait.", "expected": ""},
-            {"action": "Observe the enemy as it comes around the corner.", "expected": "The enemy should navigate the corner smoothly without getting permanently stuck on the wall geometry."}
-        ]
-    },
-    {
-        "id": "TS-A-03",
-        "title": "Settings Hydration & Persistence",
-        "context": "Visual settings must apply immediately and persist without breaking the canvas rendering.",
-        "steps": [
-            {"action": "From the Main Menu or Pause Menu, click Options > Display.", "expected": ""},
-            {"action": "Change the Resolution to '320x240' and toggle 'Scanlines' OFF.", "expected": ""},
-            {"action": "Click 'Apply'.", "expected": "The game's resolution instantly scales, and the CRT scanlines disappear."},
-            {"action": "Refresh the browser page.", "expected": "The game boots up retaining the 320x240 resolution and disabled scanlines."}
-        ]
-    },
-    {
-        "id": "TS-A-04",
-        "title": "Ragdoll Physics & Death State",
-        "context": "Testing the physics engine's handling of player death and enemy body parts.",
-        "steps": [
-            {"action": "Start Level 1 and stand still, allowing an enemy to attack you until your health reaches 0.", "expected": ""},
-            {"action": "Observe the Death Screen.", "expected": "The screen transitions to a red-tinted death overlay."},
-            {"action": "Look at the enemy that killed you.", "expected": "If you managed to kill another enemy nearby before dying, their ragdolled body parts (head, torso, limbs) should remain physically scattered on the floor."},
-            {"action": "Click 'Restart'.", "expected": "The level resets completely with your default health and ammo."}
-        ]
-    },
-    {
-        "id": "TS-A-05",
-        "title": "Weapon Switching & Auto-Fire Logic",
-        "context": "Combat fluidity relies on seamless weapon swapping while engaging targets.",
-        "steps": [
-            {"action": "Start a level. Press and hold Left Click (or Space) with the Pistol equipped.", "expected": ""},
-            {"action": "While holding the fire button, press the '1' key on your keyboard to switch to the Fist.", "expected": "The viewmodel swaps to the fist and immediately begins punching."},
-            {"action": "While still holding the fire button, press '2' to swap back to the Pistol.", "expected": "The pistol equips and resumes firing without needing to release and re-click the mouse button."}
-        ]
-    },
-    {
-        "id": "TS-B-01",
-        "title": "Authentication & JWT Verification",
-        "context": "Cloud saving requires a secure account. Testing the registration flow and visual feedback.",
-        "steps": [
-            {"action": "From the Main Menu, click 'Login'.", "expected": ""},
-            {"action": "Enter a unique Username and Password, then click the Register/Login button.", "expected": ""},
-            {"action": "Observe the UI feedback.", "expected": "The system processes the registration securely, logs you in, and the cloud status indicator updates to show you are 'synced'."},
-            {"action": "Return to the Main Menu.", "expected": "The 'Login' button is replaced by your Username or a 'Logout' option."}
-        ]
-    },
-    {
-        "id": "TS-B-02",
-        "title": "Factory Hub & Passive Income Generation",
-        "context": "Testing the core Tycoon loop using the default starting capital of 500 credits.",
-        "steps": [
-            {"action": "Click on 'Factory Hub' from the Main Menu.", "expected": ""},
-            {"action": "Observe your starting balance.", "expected": "It should display exactly 500 Credits."},
-            {"action": "Click on an 'Empty Slot' and purchase a new Red Ore Factory for 200 credits.", "expected": ""},
-            {"action": "Wait and observe the new factory card.", "expected": "Your credits drop to 300, and the factory card shows a visual timer/progress bar indicating passive resource generation."}
-        ]
-    },
-    {
-        "id": "TS-B-03",
-        "title": "The Armory & Insufficient Funds Handling",
-        "context": "Validating economy transaction security and UI error handling.",
-        "steps": [
-            {"action": "Click on 'Armory' from the Main Menu or Factory Hub.", "expected": ""},
-            {"action": "Locate the 'Shotgun' recipe. Note that it costs 50 Bars and 2000 Credits.", "expected": ""},
-            {"action": "Click the 'Buy/Unlock' button for the Shotgun.", "expected": "The transaction is blocked. A clear UI message (or toast notification) informs you that you have insufficient funds/bars."}
-        ]
-    },
-    {
-        "id": "TS-B-04",
-        "title": "Leaderboard API & Public Profile Fetching",
-        "context": "The game allows you to view competitors' factories without exposing sensitive user data.",
-        "steps": [
-            {"action": "From the Main Menu, navigate to the 'Leaderboard'.", "expected": ""},
-            {"action": "Wait for the list to populate and click on the top-ranking player's username.", "expected": ""},
-            {"action": "Observe the loaded profile.", "expected": "You are taken to a read-only view of that player's Factory Hub. You can see their machine layout, but all upgrade/collect buttons are disabled or hidden."}
-        ]
-    },
-    {
-        "id": "TS-B-05",
-        "title": "Destructive Action & Custom Modal (State Wipe)",
-        "context": "Players must be protected from accidentally deleting their save, but the feature must work flawlessly when intended.",
-        "steps": [
-            {"action": "Go to Options > Data.", "expected": ""},
-            {"action": "Click the 'Clear Progress' button.", "expected": ""},
-            {"action": "Observe the screen.", "expected": "A custom, retro-styled confirmation modal appears on-screen (not a standard browser popup)."},
-            {"action": "Click 'YES' to confirm.", "expected": "Your progress is wiped. Check the Level Select screen to verify that only Level 1 is available, and your credits are reset to the 500 default."}
-        ]
-    }
-]
+# Load scenarios from config.yaml
+with open('config.yaml', 'r') as config_file:
+    config_data = yaml.safe_load(config_file)
+    SCENARIOS = config_data.get('scenarios', [])
 
 @app.route('/update_server', methods=['POST'])
 def webhook():
@@ -141,20 +42,23 @@ def webhook():
         if not signature:
             return "Missing signature", 400
 
-        secret = bytes('YOUR_SECRET_TOKEN', 'utf-8')
+        webhook_secret = os.environ.get('WEBHOOK_SECRET', '')
+        secret = bytes(webhook_secret, 'utf-8')
         mac = hmac.new(secret, msg=request.data, digestmod=hashlib.sha256)
         expected_signature = "sha256=" + mac.hexdigest()
         
         if not hmac.compare_digest(expected_signature, signature):
             return "Invalid signature", 403
 
-        repo_dir = '/home/yourusername/mysite'
-        subprocess.call(['git', 'pull'], cwd=repo_dir)
+        repo_dir = os.environ.get('REPO_DIR')
+        if repo_dir:
+            subprocess.call(['git', 'pull'], cwd=repo_dir)
         
-        wsgi_file = '/var/www/yourusername_pythonanywhere_com_wsgi.py'
-        os.utime(wsgi_file, None)
+        wsgi_file = os.environ.get('WSGI_FILE')
+        if wsgi_file:
+            os.utime(wsgi_file, None)
         
-        return "Updated PythonAnywhere successfully", 200
+        return "Updated successfully", 200
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -186,4 +90,6 @@ def index():
     return render_template('index.html', scenarios=SCENARIOS)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Parse debug flag from environment
+    debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']
+    app.run(debug=debug_mode)
