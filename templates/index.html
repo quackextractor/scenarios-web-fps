@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INDUSTRIALIST QA Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        .scenario-card { margin-bottom: 2rem; border: 1px solid #dee2e6; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .table-radio { text-align: center; vertical-align: middle; }
+        .dotted-textarea {
+            background-image: linear-gradient(to right, transparent 10px, transparent 10px), linear-gradient(to left, transparent 10px, transparent 10px), repeating-linear-gradient(white, white 30px, #ccc 30px, #ccc 31px, white 31px);
+            line-height: 31px;
+            padding: 8px 10px;
+            border: 1px solid #ced4da;
+            resize: vertical;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            .scenario-card { page-break-inside: avoid; margin-bottom: 4rem; }
+            body { background-color: white !important; }
+        }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container py-5" id="qa-form-content">
+    <div class="text-center mb-5">
+        <h1 class="display-5 fw-bold">INDUSTRIALIST QA</h1>
+        <p class="lead">Descent Into Darkness | Unmoderated Testing Portal</p>
+    </div>
+
+    <form method="POST" action="/">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-body row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Tester Name</label>
+                    <input type="text" name="tester_name" class="form-control" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Date</label>
+                    <input type="date" name="test_date" class="form-control" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Duration (Minutes)</label>
+                    <input type="number" name="duration" class="form-control" required>
+                </div>
+            </div>
+        </div>
+
+        {% for scenario in scenarios %}
+        <div class="card scenario-card bg-white">
+            <div class="card-header bg-dark text-white">
+                <h5 class="mb-0">{{ scenario.id }}: {{ scenario.title }}</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Context:</strong> {{ scenario.context }}</p>
+                
+                <table class="table table-bordered table-striped mt-3">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 5%;">Step</th>
+                            <th style="width: 35%;">Action to Perform</th>
+                            <th style="width: 30%;">Expected Result</th>
+                            <th class="text-center" style="width: 10%;">✓</th>
+                            <th class="text-center" style="width: 10%;">✗</th>
+                            <th class="text-center" style="width: 10%;">~</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for step in scenario.steps %}
+                        <tr>
+                            <td class="text-center fw-bold">{{ loop.index }}</td>
+                            <td>{{ step.action }}</td>
+                            <td class="text-muted small">{{ step.expected }}</td>
+                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" required class="form-check-input"></td>
+                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input"></td>
+                            <td class="table-radio"><input type="radio" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <div class="mt-4">
+                    <label class="form-label fw-bold text-danger">Issue Log (Explain any ✗ or ~)</label>
+                    <textarea name="{{ scenario.id }}_issue" class="form-control dotted-textarea" rows="4" placeholder="Write issues here..."></textarea>
+                </div>
+                <div class="mt-4">
+                    <label class="form-label fw-bold text-primary">General Observations</label>
+                    <textarea name="{{ scenario.id }}_obs" class="form-control" style="height: 100px;" placeholder="UI confusion, visual glitches, unexpected behaviors..."></textarea>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="d-flex justify-content-between no-print mb-5">
+            <button type="button" class="btn btn-secondary btn-lg" onclick="exportPDF()">Export to PDF</button>
+            <button type="submit" class="btn btn-success btn-lg">Submit to Database</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function exportPDF() {
+        const element = document.getElementById('qa-form-content');
+        const opt = {
+            margin:       0.5,
+            filename:     'QA_Results.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2 },
+            jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+</script>
+</body>
+</html>
