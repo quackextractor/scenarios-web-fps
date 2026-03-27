@@ -3,25 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Quality Assurance Portal for unmoderated testing of the INDUSTRIALIST project.">
     <title>INDUSTRIALIST QA Portal</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
-        .scenario-card { margin-bottom: 2rem; border: 1px solid #dee2e6; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .table-radio { text-align: center; vertical-align: middle; }
-        .table-radio label { cursor: pointer; display: block; width: 100%; height: 100%; margin-bottom: 0; padding: 0.5rem 0; }
-        .dotted-textarea {
-            background-image: linear-gradient(to right, transparent 10px, transparent 10px), linear-gradient(to left, transparent 10px, transparent 10px), repeating-linear-gradient(white, white 30px, #ccc 30px, #ccc 31px, white 31px);
-            line-height: 31px;
-            padding: 8px 10px;
-            border: 1px solid #ced4da;
-            resize: vertical;
-        }
-        @media print {
-            .no-print { display: none !important; }
-            .scenario-card { page-break-inside: avoid; margin-bottom: 4rem; }
-            body { background-color: white !important; }
-        }
+        .scenario-card{margin-bottom:2rem;border:1px solid #dee2e6;box-shadow:0 4px 6px rgba(0,0,0,0.05)}
+        .table-radio{text-align:center;vertical-align:middle}
+        .table-radio label{cursor:pointer;display:block;width:100%;height:100%;margin-bottom:0;padding:.5rem 0}
+        .dotted-textarea{background-image:linear-gradient(to right,transparent 10px,transparent 10px),linear-gradient(to left,transparent 10px,transparent 10px),repeating-linear-gradient(white,white 30px,#ccc 30px,#ccc 31px,white 31px);line-height:31px;padding:8px 10px;border:1px solid #ced4da;resize:vertical}
+        @media print{ .no-print{display:none!important} .scenario-card{page-break-inside:avoid;margin-bottom:4rem} body{background-color:#fff!important} }
     </style>
 </head>
 <body class="bg-light">
@@ -33,6 +24,8 @@
     </div>
 
     <form method="POST" action="/">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        
         <div class="card mb-4 shadow-sm">
             <div class="card-body row g-3">
                 <div class="col-md-4">
@@ -64,8 +57,8 @@
                             <th style="width: 5%;">Step</th>
                             <th style="width: 35%;">Action to Perform</th>
                             <th style="width: 30%;">Expected Result</th>
-                            <th class="text-center" style="width: 10%;" title="Pass">✓</th>
-                            <th class="text-center" style="width: 10%;" title="Fail">✗</th>
+                            <th class="text-center" style="width: 10%;" title="Pass">&#10003;</th>
+                            <th class="text-center" style="width: 10%;" title="Fail">&#10007;</th>
                             <th class="text-center" style="width: 10%;" title="Needs Work / Difficult">~</th>
                         </tr>
                     </thead>
@@ -96,7 +89,7 @@
                 </table>
 
                 <div class="mt-4">
-                    <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any ✗ or ~)</label>
+                    <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any failed or hard steps)</label>
                     <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control dotted-textarea" rows="4" placeholder="Write issues here..."></textarea>
                 </div>
                 <div class="mt-4">
