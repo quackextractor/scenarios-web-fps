@@ -75,6 +75,15 @@ def add_security_and_cache_headers(response):
 @app.route('/update_server', methods=['POST'])
 @csrf.exempt # Webhooks rely on HMAC, not CSRF tokens
 def webhook():
+    """
+    API Endpoint: POST /update_server
+    Description: Receives Git webhook payloads to trigger automatic server pulls and restarts.
+    Security: Validates payload using HMAC SHA256 against WEBHOOK_SECRET.
+    Returns: 
+        - 200 OK: Updated successfully.
+        - 400 Bad Request: Missing signature.
+        - 403 Forbidden: Invalid signature.
+    """
     if request.method == 'POST':
         signature = request.headers.get('X-Hub-Signature-256')
         if not signature:
@@ -103,6 +112,17 @@ def webhook():
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """
+    API Endpoint: GET/POST /
+    Description: 
+        - GET: Renders the QA portal interface loaded with scenarios from config.yaml.
+        - POST: Processes QA form submissions, formats data, and securely saves it to the database.
+    Validation: Enforces basic input checks for tester name, date, and duration.
+    Returns: 
+        - 200 OK: Renders HTML (GET) or returns success string (POST).
+        - 400 Bad Request: Invalid or missing form data.
+        - 500 Internal Server Error: Database failure.
+    """
     if request.method == 'POST':
         # Sanitize and validate basic inputs (Checklist 7.1, 7.5)
         tester_name = request.form.get('tester_name', '').strip()

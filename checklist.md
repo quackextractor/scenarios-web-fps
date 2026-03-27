@@ -2,8 +2,8 @@
 
 ## 1. Architecture
 
-* [ ] 1.1 The repo contains a README with a description of the application architecture (frontend, backend, database).
-* [ ] 1.2 The repo contains an overview of the technologies used and their versions.
+* [x] 1.1 The repo contains a README with a description of the application architecture (frontend, backend, database).
+* [x] 1.2 The repo contains an overview of the technologies used and their versions.
 * [x] 1.3 The project has a clear folder structure (e.g., src, public, assets, components, api).
 * [x] 1.4 Application logic is separated from the user interface.
 * [x] 1.5 Static files (images, CSS, JS) are separated from the application logic.
@@ -22,7 +22,7 @@
 ## 3. API
 
 * [x] 3.1 The server returns correct HTTP status codes (200, 400, 403, 500).
-* [ ] 3.2 API endpoints are documented.
+* [x] 3.2 API endpoints are documented.
 * [x] 3.3 Invalid requests return a comprehensible error.
 * [x] 3.4 The server does not return internal error information to the user.
 * [x] 3.5 The server correctly sets the Content-Type of the response.
@@ -54,9 +54,9 @@
 
 * [x] 6.1 The page has a set title.
 * [x] 6.2 The page has a meta description.
-* [ ] 6.3 The page uses the correct heading structure.
+* [x] 6.3 The page uses the correct heading structure.
 * [ ] 6.4 Images have an alt attribute.
-* [ ] 6.5 The page is usable on mobile devices.
+* [x] 6.5 The page is usable on mobile devices.
 
 ## 7. Security
 
