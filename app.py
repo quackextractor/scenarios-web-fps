@@ -180,6 +180,7 @@ def webhook():
     repo_dir = os.environ.get('REPO_DIR')
     if repo_dir:
         subprocess.call(['git', 'pull'], cwd=repo_dir)
+        subprocess.call(['/home/lustsoul/.virtualenvs/myvenv/bin/pip', 'install', '-r', 'requirements.txt'], cwd=repo_dir)
 
     wsgi_file = os.environ.get('WSGI_FILE')
     if wsgi_file:
