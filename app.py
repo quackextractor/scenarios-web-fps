@@ -549,7 +549,9 @@ def admin_wipe_db():
         logging.error(f"Python native backup failed: {e}")
         abort(500, description="Pre-wipe backup failed. Database was NOT wiped to prevent data loss.")
 
-    # 4. Wipe and recreate tables safely
+    # 4. Clear the active database session and release all locks to prevent hanging
+    db.session.remove()
+    # 5. Wipe and recreate tables safely
     db.drop_all()
     db.create_all()
     return redirect(url_for('admin_dashboard'))
