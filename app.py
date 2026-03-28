@@ -515,36 +515,41 @@ def admin_blacklist():
 @login_required
 def admin_wipe_db():
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
-    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    backup_path = f"qa_database_backup_{timestamp}.json"
 
-    if db_uri.startswith('sqlite:///'):
-        backup_path = f"qa_database_{timestamp}.db"
-        db_path = db_uri.replace('sqlite:///', '')
-        if os.path.exists(db_path):
-            shutil.copy2(db_path, backup_path)
-    elif db_uri.startswith('postgresql'):
-        backup_path = f"qa_database_{timestamp}.sql"
-        parsed_uri = urlparse(db_uri)
-        env = os.environ.copy()
+    try:
+        # 1. Fetch all records using SQLAlchemy
+        submissions = db.session.scalars(db.select(TestSubmission)).all()
+        backup_data = []
 
-        if parsed_uri.password:
-            env['PGPASSWORD'] = unquote(parsed_uri.password)
-            safe_netloc = parsed_uri.hostname
-            if parsed_uri.port:
-                safe_netloc += f":{parsed_uri.port}"
-            if parsed_uri.username:
-                safe_netloc = f"{unquote(parsed_uri.username)}@{safe_netloc}"
+        # 2. Format the data into a list of dictionaries
+        for sub in submissions:
+            try:
+                parsed_test_data = json.loads(sub.test_data)
+            except json.JSONDecodeError:
+                parsed_test_data = {}
 
-            safe_uri = parsed_uri._replace(netloc=safe_netloc).geturl()
-        else:
-            safe_uri = db_uri
+            backup_data.append({
+                "id": sub.id,
+                "email": sub.email,
+                "scenario_id": sub.scenario_id,
+                "test_date": sub.test_date,
+                "duration_minutes": sub.duration,
+                "submission_time": sub.submission_time.isoformat(),
+                "results": parsed_test_data
+            })
 
-        try:
-            subprocess.run(['pg_dump', safe_uri, '-f', backup_path], env=env, check=True)
-        except Exception as e:
-            logging.error(f"PostgreSQL backup failed: {e}")
-            abort(500, description="Pre-wipe backup failed. Database was NOT wiped to prevent data loss.")
+        # 3. Write the data to a local JSON file
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(backup_data, f, indent=2)
 
+        logging.info(f"Database backed up securely to {backup_path}")
+
+    except Exception as e:
+        logging.error(f"Python native backup failed: {e}")
+        abort(500, description="Pre-wipe backup failed. Database was NOT wiped to prevent data loss.")
+
+    # 4. Wipe and recreate tables safely
     db.drop_all()
     db.create_all()
     return redirect(url_for('admin_dashboard'))
