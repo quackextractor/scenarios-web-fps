@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Quality Assurance Portal for unmoderated testing of the INDUSTRIALIST project.">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>INDUSTRIALIST QA Portal</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
@@ -105,14 +106,14 @@
                                     </label>
                                 </td>
                                  <td class="table-radio p-0">
-                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
+                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" disabled>
                                     </label>
                                 </td>
                                 <td class="table-radio p-0">
                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" disabled>
-                                    </label>
+                                     </label>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -141,7 +142,6 @@
 </div>
 
 <script>
-    // Handle toggling of scenario sets and requirement logic
     document.querySelectorAll('.set-selector').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
             const container = document.getElementById('container_' + this.value);
@@ -161,13 +161,11 @@
         });
     });
 
-    // Dynamic validation for the Issue Log
     document.addEventListener('change', function(e) {
         if (e.target.classList.contains('step-radio')) {
             const scenarioCard = e.target.closest('.scenario-card');
             const scenarioId = scenarioCard.dataset.scenarioId;
             const issueTextarea = document.getElementById(scenarioId + '_issue');
-            
             const allRadios = scenarioCard.querySelectorAll('.step-radio');
             let requiresExplanation = false;
             
@@ -178,8 +176,6 @@
             });
             
             issueTextarea.required = requiresExplanation;
-            
-            // Visual feedback for required field
             if (requiresExplanation) {
                 issueTextarea.classList.add('border-danger');
             } else {
