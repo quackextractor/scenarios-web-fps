@@ -20,7 +20,7 @@ from flask_compress import Compress
 from flask_mail import Mail, Message
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
 from sqlalchemy.exc import IntegrityError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -57,12 +57,27 @@ limiter = Limiter(
 Compress(app)
 csrf = CSRFProtect(app)
 
+# Database initialization with automated fallback logic
 db_uri = os.environ.get('DATABASE_URI', 'sqlite:///qa_database.db')
+
+def get_sqlite_fallback():
+    fallback_path = os.path.join(BASE_DIR, 'qa_database.db')
+    return f'sqlite:///{fallback_path}'
+
 if db_uri.startswith('sqlite:///'):
     db_path = os.path.join(BASE_DIR, db_uri.replace('sqlite:///', ''))
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+    try:
+        # Attempt to connect to the external database with a 3-second timeout
+        test_engine = create_engine(db_uri, connect_args={"connect_timeout": 3})
+        with test_engine.connect() as conn:
+            pass
+        app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
+        logging.info("Successfully connected to external database.")
+    except Exception as e:
+        logging.error(f"External database connection failed: {e}. Falling back to SQLite.")
+        app.config['SQLALCHEMY_DATABASE_URI'] = get_sqlite_fallback()
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
