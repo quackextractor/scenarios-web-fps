@@ -6,6 +6,8 @@ import subprocess
 import logging
 import logging.handlers
 import random
+import secrets
+from urllib.parse import urlparse
 import shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -125,7 +127,10 @@ def add_security_and_cache_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Content-Security-Policy'] = "default-src 'self' https: 'unsafe-inline' 'unsafe-eval';"
+    
+    # Updated to restrict eval and tighten default sources
+    response.headers['Content-Security-Policy'] = "default-src 'self' https:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; object-src 'none';"
+    
     response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
 
     if 'Cache-Control' not in response.headers:
@@ -207,7 +212,8 @@ def login():
             return render_template('login.html', error="Your account has been blocked.")
 
         if email.endswith(suffix) or whitelisted:
-            otp = str(random.randint(100000, 999999))
+            # Replaced insecure random with secrets module
+            otp = str(secrets.randbelow(900000) + 100000)
             session['pending_email'] = email
             session['otp'] = otp
             session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
@@ -251,7 +257,8 @@ def verify_otp():
 
 @app.route('/logout')
 def logout():
-    session.pop('user_email', None)
+    # Clears entire session object rather than just popping the email
+    session.clear()
     return redirect(url_for('login'))
 
 @app.route('/', methods=['GET', 'POST'])
@@ -376,6 +383,12 @@ def admin_login():
 
         if hmac.compare_digest(password.encode('utf-8'), admin_pass.encode('utf-8')):
             session['admin_logged_in'] = True
+            
+            if next_page:
+                parsed_next = urlparse(next_page)
+                if parsed_next.netloc != '' or parsed_next.scheme != '':
+                    next_page = None
+
             return redirect(next_page or url_for('admin_dashboard'))
 
         return render_template('admin_login.html', error="Invalid credentials.")
