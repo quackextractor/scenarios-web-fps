@@ -71,14 +71,14 @@ db = SQLAlchemy(app)
 class TestSubmission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), nullable=False)
-    scenario_set = db.Column(db.String(50), nullable=False)
+    scenario_id = db.Column(db.String(50), nullable=False)
     test_date = db.Column(db.String(20), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
     submission_time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     test_data = db.Column(db.Text, nullable=False)
 
     __table_args__ = (
-        db.UniqueConstraint('email', 'scenario_set', name='unique_email_scenario_set'),
+        db.UniqueConstraint('email', 'scenario_id', name='unique_email_scenario_id'),
     )
 
 class WhitelistedEmail(db.Model):
@@ -257,48 +257,41 @@ def logout():
 @user_login_required
 def index():
     user_email = session.get('user_email')
-
-    scenario_sets = {}
-    for scenario in SCENARIOS:
-        set_prefix = scenario['id'].rsplit('-', 1)[0]
-        if set_prefix not in scenario_sets:
-            scenario_sets[set_prefix] = []
-        scenario_sets[set_prefix].append(scenario)
-
     test_app_url = os.environ.get('TEST_APP_URL')
 
     existing_submissions = TestSubmission.query.filter_by(email=user_email).all()
-    submitted_sets = {sub.scenario_set: sub.id for sub in existing_submissions}
+    submitted_scenarios = {sub.scenario_id: sub.id for sub in existing_submissions}
 
     if request.method == 'POST':
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
-        selected_set = request.form.get('selected_set')
+        selected_scenario = request.form.get('selected_scenario')
 
-        if not test_date or not duration.isdigit() or not selected_set:
+        if not test_date or not duration.isdigit() or not selected_scenario:
             logging.warning("Invalid input data submitted.")
-            abort(400, description="Invalid data provided. Make sure to select a scenario set.")
+            abort(400, description="Invalid data provided. Make sure to select a scenario.")
 
-        if selected_set in submitted_sets:
-            abort(400, description="You have already submitted a report for this scenario set. Please edit it instead.")
+        if selected_scenario in submitted_scenarios:
+            abort(400, description="You have already submitted a report for this scenario. Please edit it instead.")
 
-        results = {}
-        for scenario in scenario_sets.get(selected_set, []):
-            s_id = scenario['id']
-            steps_data = []
-            for i in range(len(scenario['steps'])):
-                step_val = request.form.get(f"{s_id}_step_{i}")
-                steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
+        target_scenario = next((s for s in SCENARIOS if s['id'] == selected_scenario), None)
+        if not target_scenario:
+            abort(400, description="Invalid scenario selected.")
 
-            results[s_id] = {
-                'steps': steps_data,
-                'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
-                'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
-            }
+        steps_data = []
+        for i in range(len(target_scenario['steps'])):
+            step_val = request.form.get(f"{selected_scenario}_step_{i}")
+            steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
+
+        results = {
+            'steps': steps_data,
+            'issue_log': bleach.clean(request.form.get(f"{selected_scenario}_issue", "")),
+            'observations': bleach.clean(request.form.get(f"{selected_scenario}_obs", ""))
+        }
 
         new_submission = TestSubmission(
             email=user_email,
-            scenario_set=selected_set,
+            scenario_id=selected_scenario,
             test_date=test_date,
             duration=int(duration),
             test_data=json.dumps(results)
@@ -311,13 +304,13 @@ def index():
             return redirect(url_for('thanks'))
         except IntegrityError:
             db.session.rollback()
-            abort(400, description="Database verification failed: You have already submitted a report for this specific scenario set.")
+            abort(400, description="Database verification failed: You have already submitted a report for this specific scenario.")
         except Exception as e:
             db.session.rollback()
             logging.error(f"Database error during submission: {e}")
             abort(500, description="An error occurred while saving your submission.")
 
-    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=None, parsed_data={}, submitted_sets=submitted_sets, user_email=user_email)
+    return render_template('index.html', scenarios=SCENARIOS, test_app_url=test_app_url, edit_sub=None, parsed_data={}, submitted_scenarios=submitted_scenarios, user_email=user_email)
 
 @app.route('/edit/<int:submission_id>', methods=['GET', 'POST'])
 @user_login_required
@@ -328,14 +321,7 @@ def edit_submission(submission_id):
     if user_email != sub.email:
         abort(403, description="You are not authorized to edit this submission.")
 
-    scenario_sets = {}
-    for scenario in SCENARIOS:
-        set_prefix = scenario['id'].rsplit('-', 1)[0]
-        if set_prefix not in scenario_sets:
-            scenario_sets[set_prefix] = []
-        scenario_sets[set_prefix].append(scenario)
-
-    editing_set = sub.scenario_set
+    editing_scenario = sub.scenario_id
 
     if request.method == 'POST':
         test_date = request.form.get('test_date', '').strip()
@@ -344,19 +330,20 @@ def edit_submission(submission_id):
         if not test_date or not duration.isdigit():
             abort(400, description="Invalid data provided.")
 
-        results = {}
-        for scenario in scenario_sets.get(editing_set, []):
-            s_id = scenario['id']
-            steps_data = []
-            for i in range(len(scenario['steps'])):
-                step_val = request.form.get(f"{s_id}_step_{i}")
-                steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
+        target_scenario = next((s for s in SCENARIOS if s['id'] == editing_scenario), None)
+        if not target_scenario:
+            abort(400, description="Invalid scenario configuration.")
 
-            results[s_id] = {
-                'steps': steps_data,
-                'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
-                'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
-            }
+        steps_data = []
+        for i in range(len(target_scenario['steps'])):
+            step_val = request.form.get(f"{editing_scenario}_step_{i}")
+            steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
+
+        results = {
+            'steps': steps_data,
+            'issue_log': bleach.clean(request.form.get(f"{editing_scenario}_issue", "")),
+            'observations': bleach.clean(request.form.get(f"{editing_scenario}_obs", ""))
+        }
 
         sub.test_date = test_date
         sub.duration = int(duration)
@@ -377,7 +364,7 @@ def edit_submission(submission_id):
         parsed_data = {}
 
     test_app_url = os.environ.get('TEST_APP_URL')
-    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data, submitted_sets={}, editing_set=editing_set, user_email=user_email)
+    return render_template('index.html', scenarios=SCENARIOS, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data, submitted_scenarios={}, editing_scenario=editing_scenario, user_email=user_email)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -481,7 +468,7 @@ def export_json():
             item = {
                 "id": sub.id,
                 "email": sub.email,
-                "scenario_set": sub.scenario_set,
+                "scenario_id": sub.scenario_id,
                 "test_date": sub.test_date,
                 "duration_minutes": sub.duration,
                 "submission_time": sub.submission_time.isoformat(),

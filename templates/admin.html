@@ -79,7 +79,7 @@
                 <h2 class="accordion-header" id="heading-{{ sub.id }}">
                     <button class="accordion-button collapsed py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ sub.id }}" aria-expanded="false" aria-controls="collapse-{{ sub.id }}">
                         <div class="w-100 d-flex justify-content-between align-items-center pe-3">
-                            <span><strong>{{ sub.email }}</strong> <span class="badge bg-primary ms-2">{{ sub.scenario_set }}</span> <span class="text-muted ms-2">| {{ sub.test_date }}</span></span>
+                            <span><strong>{{ sub.email }}</strong> <span class="badge bg-primary ms-2">{{ sub.scenario_id }}</span> <span class="text-muted ms-2">| {{ sub.test_date }}</span></span>
                             <span class="badge bg-secondary rounded-pill">{{ sub.duration }} mins</span>
                         </div>
                     </button>
@@ -88,16 +88,15 @@
                     <div class="accordion-body bg-light">
                         <div class="mb-3 text-muted small">Submitted System Time: {{ sub.submission_time.strftime('%Y-%m-%d %H:%M:%S') }}</div>
 
-                        {% for scenario_id, data in sub.parsed_data.items() %}
                         <div class="card mb-3 border-0 shadow-sm">
                             <div class="card-header bg-white fw-bold text-primary">
-                                Scenario: {{ scenario_id }}
+                                Scenario: {{ sub.scenario_id }}
                             </div>
                             <div class="card-body">
                                 <div class="mb-3">
                                     <h6 class="fw-bold text-secondary">Steps Breakdown</h6>
                                     <div class="d-flex flex-wrap gap-2">
-                                        {% for step in data.steps %}
+                                        {% for step in sub.parsed_data.steps %}
                                             {% if step == 'pass' %}
                                                 <span class="badge bg-success border">Step {{ loop.index }}: Pass</span>
                                             {% elif step == 'fail' %}
@@ -114,8 +113,8 @@
                                     <div class="col-md-6">
                                         <h6 class="fw-bold text-danger">Issue Log</h6>
                                         <div class="p-2 border rounded bg-white min-vh-25">
-                                            {% if data.issue_log %}
-                                                {{ data.issue_log }}
+                                            {% if sub.parsed_data.issue_log %}
+                                                {{ sub.parsed_data.issue_log }}
                                             {% else %}
                                                 <span class="text-muted fst-italic">No issues reported.</span>
                                             {% endif %}
@@ -124,8 +123,8 @@
                                     <div class="col-md-6">
                                         <h6 class="fw-bold text-info">General Observations</h6>
                                         <div class="p-2 border rounded bg-white min-vh-25">
-                                            {% if data.observations %}
-                                                {{ data.observations }}
+                                            {% if sub.parsed_data.observations %}
+                                                {{ sub.parsed_data.observations }}
                                             {% else %}
                                                 <span class="text-muted fst-italic">No observations provided.</span>
                                             {% endif %}
@@ -134,7 +133,6 @@
                                 </div>
                             </div>
                         </div>
-                        {% endfor %}
                     </div>
                 </div>
             </div>
