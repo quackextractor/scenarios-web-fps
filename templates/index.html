@@ -24,21 +24,21 @@
 </head>
 <body>
 
-<div class="container py-5" id="qa-form-content">
-    <div class="d-flex justify-content-end mb-2 no-print">
+<main class="container py-5" id="qa-form-content">
+    <header class="d-flex justify-content-end mb-2 no-print">
         <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Logout</a>
-    </div>
+    </header>
 
-    <div class="text-center mb-5">
+    <section class="text-center mb-5">
         <h1 class="display-4 fw-bold text-dark">INDUSTRIALIST QA</h1>
         <p class="lead text-muted mb-2">Descent Into Darkness | Unmoderated Testing Portal</p>
         {% if test_app_url %}
         <a href="{{ test_app_url }}" target="_blank" class="fw-bold no-print d-block mb-3">Launch Test Application</a>
         {% endif %}
-    </div>
+    </section>
 
     {% if not edit_sub and submitted_scenarios %}
-    <div class="card mb-4 shadow-sm border-0 no-print">
+    <section class="card mb-4 shadow-sm border-0 no-print">
         <div class="card-header bg-success text-white">
             <h5 class="mb-0">Your Submitted Reports</h5>
         </div>
@@ -52,13 +52,13 @@
                 {% endfor %}
             </ul>
         </div>
-    </div>
+    </section>
     {% endif %}
 
     <form method="POST" action="{% if edit_sub %}{{ url_for('edit_submission', submission_id=edit_sub.id) }}{% else %}{{ url_for('index') }}{% endif %}" id="qa-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
-        <div class="card mb-4 shadow-sm border-0">
+        <section class="card mb-4 shadow-sm border-0">
             <div class="card-body row g-3 bg-white rounded">
                 <div class="col-md-4">
                     <label class="form-label fw-bold text-secondary">Tester Email</label>
@@ -73,9 +73,9 @@
                     <input type="number" id="duration" name="duration" class="form-control" value="{{ edit_sub.duration if edit_sub else '' }}" required min="1">
                 </div>
             </div>
-        </div>
+        </section>
 
-        <div class="card mb-5 shadow-sm border-0">
+        <section class="card mb-5 shadow-sm border-0">
             <div class="card-header bg-primary text-white">
                 <h4 class="mb-0">Test Configuration</h4>
             </div>
@@ -97,10 +97,10 @@
                     {% endif %}
                 </div>
             </div>
-        </div>
+        </section>
 
         {% for scenario in scenarios %}
-        <div class="scenario-container" id="container_{{ scenario.id }}">
+        <section class="scenario-container" id="container_{{ scenario.id }}">
             <div class="card scenario-card bg-white" data-scenario-id="{{ scenario.id }}">
                 <div class="card-header bg-dark text-white">
                     <h5 class="mb-0">{{ scenario.id }}: {{ scenario.title }}</h5>
@@ -110,43 +110,45 @@
                         <strong>Context:</strong> {{ scenario.context }}
                     </div>
 
-                    <table class="table table-bordered table-striped mt-3">
-                        <thead class="table-light">
-                            <tr>
-                                <th style="width: 5%;">Step</th>
-                                <th style="width: 35%;">Action to Perform</th>
-                                <th style="width: 30%;">Expected Result</th>
-                                <th class="text-center" style="width: 10%;" title="Pass">&#10003;</th>
-                                <th class="text-center" style="width: 10%;" title="Fail">&#10007;</th>
-                                <th class="text-center" style="width: 10%;" title="Needs Work / Difficult">~</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for step in scenario.steps %}
-                            {% set current_val = parsed_data.get('steps', [])[loop.index0] if parsed_data else None %}
-                            <tr>
-                                <td class="text-center fw-bold align-middle">{{ loop.index }}</td>
-                                <td class="align-middle">{{ step.action }}</td>
-                                <td class="text-muted small align-middle">{{ step.expected }}</td>
-                                <td class="table-radio p-0">
-                                    <label for="{{ scenario.id }}_step_{{ loop.index0 }}_pass" title="Pass">
-                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" class="form-check-input m-0 step-radio" required {% if current_val == 'pass' %}checked{% endif %}>
-                                    </label>
-                                </td>
-                                <td class="table-radio p-0">
-                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
-                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" {% if current_val == 'fail' %}checked{% endif %}>
-                                     </label>
-                                </td>
-                                <td class="table-radio p-0">
-                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
-                                          <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
-                                      </label>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped mt-3">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 5%;">Step</th>
+                                    <th style="width: 35%;">Action to Perform</th>
+                                    <th style="width: 30%;">Expected Result</th>
+                                    <th class="text-center" style="width: 10%;" title="Pass">&#10003;</th>
+                                    <th class="text-center" style="width: 10%;" title="Fail">&#10007;</th>
+                                    <th class="text-center" style="width: 10%;" title="Needs Work / Difficult">~</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for step in scenario.steps %}
+                                {% set current_val = parsed_data.get('steps', [])[loop.index0] if parsed_data else None %}
+                                <tr>
+                                    <td class="text-center fw-bold align-middle">{{ loop.index }}</td>
+                                    <td class="align-middle">{{ step.action }}</td>
+                                    <td class="text-muted small align-middle">{{ step.expected }}</td>
+                                    <td class="table-radio p-0">
+                                        <label for="{{ scenario.id }}_step_{{ loop.index0 }}_pass" title="Pass">
+                                            <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" class="form-check-input m-0 step-radio" required {% if current_val == 'pass' %}checked{% endif %}>
+                                        </label>
+                                    </td>
+                                    <td class="table-radio p-0">
+                                         <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
+                                             <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" {% if current_val == 'fail' %}checked{% endif %}>
+                                         </label>
+                                    </td>
+                                    <td class="table-radio p-0">
+                                          <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
+                                              <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
+                                          </label>
+                                     </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
 
                     <div class="mt-4">
                         <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any failed or hard steps)</label>
@@ -158,7 +160,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
         {% endfor %}
 
         <div class="d-flex justify-content-between no-print mb-5 mt-4">
@@ -166,7 +168,7 @@
             <button type="submit" class="btn btn-success btn-lg px-5">{% if edit_sub %}Save Changes{% else %}Submit to Database{% endif %}</button>
         </div>
     </form>
-</div>
+</main>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {

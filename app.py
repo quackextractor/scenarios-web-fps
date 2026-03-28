@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 import random
 import secrets
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, urljoin, unquote
 import shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -95,9 +95,6 @@ class BlacklistedUser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
 
-with app.app_context():
-    db.create_all()
-
 config_path = os.path.join(BASE_DIR, 'config.yaml')
 with open(config_path, 'r') as config_file:
     config_data = yaml.safe_load(config_file)
@@ -107,17 +104,23 @@ def get_admin_emails():
     admins = os.environ.get('ADMIN_EMAILS', '')
     return [email.strip().lower() for email in admins.split(',') if email.strip()]
 
+def is_safe_url(target):
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc
+
 def user_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_email = session.get('user_email')
         if not user_email:
             return redirect(url_for('login', next=request.full_path))
-            
-        if BlacklistedUser.query.filter_by(email=user_email).first():
+
+        blacklisted = db.session.scalars(db.select(BlacklistedUser).filter_by(email=user_email)).first()
+        if blacklisted:
             session.clear()
             return redirect(url_for('login'))
-            
+
         return f(*args, **kwargs)
     return decorated_function
 
@@ -126,10 +129,12 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         user_email = session.get('user_email')
         admin_emails = get_admin_emails()
-        
-        if user_email and BlacklistedUser.query.filter_by(email=user_email).first():
-            session.clear()
-            return redirect(url_for('login'))
+
+        if user_email:
+            blacklisted = db.session.scalars(db.select(BlacklistedUser).filter_by(email=user_email)).first()
+            if blacklisted:
+                session.clear()
+                return redirect(url_for('login'))
 
         if not session.get('admin_logged_in') and (not user_email or user_email not in admin_emails):
             return redirect(url_for('admin_login', next=request.full_path))
@@ -194,9 +199,15 @@ def webhook():
         abort(403, description="Invalid signature")
 
     repo_dir = os.environ.get('REPO_DIR')
+    venv_pip = os.environ.get('VENV_PIP_PATH', 'pip')
+
     if repo_dir:
-        subprocess.call(['git', 'pull'], cwd=repo_dir)
-        subprocess.call(['/home/lustsoul/.virtualenvs/myvenv/bin/pip', 'install', '-r', 'requirements.txt'], cwd=repo_dir)
+        try:
+            subprocess.run(['git', 'pull'], cwd=repo_dir, check=True)
+            subprocess.run([venv_pip, 'install', '-r', 'requirements.txt'], cwd=repo_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Webhook update failed: {e}")
+            abort(500, description="Server update execution failed.")
 
     wsgi_file = os.environ.get('WSGI_FILE')
     if wsgi_file:
@@ -215,20 +226,20 @@ def thanks():
 def login():
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
-        
+
         if len(email) > 120:
             return render_template('login.html', error="Email exceeds maximum length allowed.")
-        
+
         suffix = os.environ['SCHOOL_EMAIL_SUFFIX'].lower()
-        whitelisted = WhitelistedEmail.query.filter_by(email=email).first()
-        blacklisted = BlacklistedUser.query.filter_by(email=email).first()
+        whitelisted = db.session.scalars(db.select(WhitelistedEmail).filter_by(email=email)).first()
+        blacklisted = db.session.scalars(db.select(BlacklistedUser).filter_by(email=email)).first()
 
         if blacklisted:
             return render_template('login.html', error="Your account has been blocked.")
 
         if email.endswith(suffix) or whitelisted:
             otp = str(secrets.randbelow(900000) + 100000)
-            
+
             session['pending_email'] = email
             session['otp'] = otp
             session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
@@ -294,7 +305,7 @@ def index():
     user_email = session.get('user_email')
     test_app_url = os.environ.get('TEST_APP_URL')
 
-    existing_submissions = TestSubmission.query.filter_by(email=user_email).all()
+    existing_submissions = db.session.scalars(db.select(TestSubmission).filter_by(email=user_email)).all()
     submitted_scenarios = {sub.scenario_id: sub.id for sub in existing_submissions}
 
     if request.method == 'POST':
@@ -305,7 +316,7 @@ def index():
         if not test_date or not duration.isdigit() or len(duration) > 8 or not selected_scenario:
             logging.warning("Invalid input data submitted.")
             abort(400, description="Invalid data provided. Make sure to select a scenario.")
-            
+
         if len(test_date) > 20:
             abort(400, description="Test date format exceeds length constraints.")
 
@@ -360,7 +371,7 @@ def index():
 @user_login_required
 @limiter.limit("30 per minute")
 def edit_submission(submission_id):
-    sub = TestSubmission.query.get_or_404(submission_id)
+    sub = db.get_or_404(TestSubmission, submission_id)
     user_email = session.get('user_email')
 
     if user_email != sub.email:
@@ -374,7 +385,7 @@ def edit_submission(submission_id):
 
         if not test_date or not duration.isdigit() or len(duration) > 8:
             abort(400, description="Invalid data provided.")
-            
+
         if len(test_date) > 20:
             abort(400, description="Test date format exceeds length constraints.")
 
@@ -430,14 +441,9 @@ def admin_login():
 
         if hmac.compare_digest(password.encode('utf-8'), admin_pass.encode('utf-8')):
             session['admin_logged_in'] = True
-            
-            if next_page:
-                if not next_page.startswith('/') or next_page.startswith('//') or next_page.startswith('\\\\') or next_page.startswith('/\\'):
-                    next_page = None
-                else:
-                    parsed_next = urlparse(next_page)
-                    if parsed_next.netloc != '' or parsed_next.scheme != '':
-                        next_page = None
+
+            if next_page and not is_safe_url(next_page):
+                next_page = None
 
             return redirect(next_page or url_for('admin_dashboard'))
 
@@ -454,22 +460,24 @@ def admin_logout():
 @login_required
 def admin_dashboard():
     page = request.args.get('page', 1, type=int)
-    submissions = TestSubmission.query.order_by(TestSubmission.submission_time.desc()).paginate(page=page, per_page=20)
-    for sub in submissions.items:
+    pagination = db.paginate(db.select(TestSubmission).order_by(TestSubmission.submission_time.desc()), page=page, per_page=20)
+
+    for sub in pagination.items:
         try:
             sub.parsed_data = json.loads(sub.test_data)
         except json.JSONDecodeError:
             sub.parsed_data = {}
 
-    return render_template('admin.html', submissions=submissions)
+    return render_template('admin.html', submissions=pagination)
 
 @app.route('/stats', methods=['GET'])
 @login_required
 def stats():
     try:
-        total = TestSubmission.query.count()
+        total = db.session.scalar(db.select(db.func.count(TestSubmission.id)))
         return jsonify({"total_submissions": total}), 200
-    except Exception:
+    except Exception as e:
+        logging.error(f"Stats error: {e}")
         return jsonify({"error": "Database error"}), 500
 
 @app.route('/admin/whitelist', methods=['POST'])
@@ -480,8 +488,9 @@ def admin_whitelist():
         try:
             db.session.add(WhitelistedEmail(email=email))
             db.session.commit()
-        except Exception:
+        except Exception as e:
             db.session.rollback()
+            logging.error(f"Whitelist error: {e}")
     elif len(email) > 120:
         abort(400, description="Email too long.")
     return redirect(url_for('admin_dashboard'))
@@ -496,8 +505,9 @@ def admin_blacklist():
         try:
             db.session.add(BlacklistedUser(email=email))
             db.session.commit()
-        except Exception:
+        except Exception as e:
             db.session.rollback()
+            logging.error(f"Blacklist error: {e}")
     elif len(email) > 120:
         abort(400, description="Email too long.")
     return redirect(url_for('admin_dashboard'))
@@ -517,7 +527,7 @@ def admin_wipe_db():
         backup_path = f"qa_database_{timestamp}.sql"
         parsed_uri = urlparse(db_uri)
         env = os.environ.copy()
-        
+
         if parsed_uri.password:
             env['PGPASSWORD'] = unquote(parsed_uri.password)
             safe_netloc = parsed_uri.hostname
@@ -525,7 +535,7 @@ def admin_wipe_db():
                 safe_netloc += f":{parsed_uri.port}"
             if parsed_uri.username:
                 safe_netloc = f"{unquote(parsed_uri.username)}@{safe_netloc}"
-            
+
             safe_uri = parsed_uri._replace(netloc=safe_netloc).geturl()
         else:
             safe_uri = db_uri
@@ -546,7 +556,9 @@ def export_json():
     def generate():
         yield '['
         first = True
-        for sub in TestSubmission.query.yield_per(100):
+
+        query = db.select(TestSubmission).execution_options(yield_per=100)
+        for sub in db.session.scalars(query):
             if not first:
                 yield ','
             first = False
@@ -574,4 +586,6 @@ def export_json():
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']
+    with app.app_context():
+        db.create_all()
     app.run(debug=debug_mode)
