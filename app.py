@@ -38,6 +38,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.secret_key = os.environ['SECRET_KEY']
 
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -272,6 +273,7 @@ def logout():
 
 @app.route('/', methods=['GET', 'POST'])
 @user_login_required
+@limiter.limit("30 per minute")
 def index():
     user_email = session.get('user_email')
     test_app_url = os.environ.get('TEST_APP_URL')
@@ -303,10 +305,16 @@ def index():
             step_val = request.form.get(f"{selected_scenario}_step_{i}")
             steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
 
+        issue_log = bleach.clean(request.form.get(f"{selected_scenario}_issue", ""))
+        observations = bleach.clean(request.form.get(f"{selected_scenario}_obs", ""))
+
+        if len(issue_log) > 5000 or len(observations) > 5000:
+            abort(400, description="Input text exceeds maximum allowed length.")
+
         results = {
             'steps': steps_data,
-            'issue_log': bleach.clean(request.form.get(f"{selected_scenario}_issue", "")),
-            'observations': bleach.clean(request.form.get(f"{selected_scenario}_obs", ""))
+            'issue_log': issue_log,
+            'observations': observations
         }
 
         new_submission = TestSubmission(
@@ -334,6 +342,7 @@ def index():
 
 @app.route('/edit/<int:submission_id>', methods=['GET', 'POST'])
 @user_login_required
+@limiter.limit("30 per minute")
 def edit_submission(submission_id):
     sub = TestSubmission.query.get_or_404(submission_id)
     user_email = session.get('user_email')
@@ -362,10 +371,16 @@ def edit_submission(submission_id):
             step_val = request.form.get(f"{editing_scenario}_step_{i}")
             steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
 
+        issue_log = bleach.clean(request.form.get(f"{editing_scenario}_issue", ""))
+        observations = bleach.clean(request.form.get(f"{editing_scenario}_obs", ""))
+
+        if len(issue_log) > 5000 or len(observations) > 5000:
+            abort(400, description="Input text exceeds maximum allowed length.")
+
         results = {
             'steps': steps_data,
-            'issue_log': bleach.clean(request.form.get(f"{editing_scenario}_issue", "")),
-            'observations': bleach.clean(request.form.get(f"{editing_scenario}_obs", ""))
+            'issue_log': issue_log,
+            'observations': observations
         }
 
         sub.test_date = test_date
@@ -400,7 +415,7 @@ def admin_login():
             session['admin_logged_in'] = True
             
             if next_page:
-                if not next_page.startswith('/') or next_page.startswith('//') or next_page.startswith('\\\\'):
+                if not next_page.startswith('/') or next_page.startswith('//') or next_page.startswith('\\\\') or next_page.startswith('/\\'):
                     next_page = None
                 else:
                     parsed_next = urlparse(next_page)
