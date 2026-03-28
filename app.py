@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 import random
 import secrets
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -105,7 +105,7 @@ with open(config_path, 'r') as config_file:
 
 def get_admin_emails():
     admins = os.environ.get('ADMIN_EMAILS', '')
-    return [email.strip() for email in admins.split(',') if email.strip()]
+    return [email.strip().lower() for email in admins.split(',') if email.strip()]
 
 def user_login_required(f):
     @wraps(f)
@@ -214,12 +214,12 @@ def thanks():
 @limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
-        email = request.form.get('email', '').strip()
+        email = request.form.get('email', '').strip().lower()
         
         if len(email) > 120:
             return render_template('login.html', error="Email exceeds maximum length allowed.")
-            
-        suffix = os.environ['SCHOOL_EMAIL_SUFFIX']
+        
+        suffix = os.environ['SCHOOL_EMAIL_SUFFIX'].lower()
         whitelisted = WhitelistedEmail.query.filter_by(email=email).first()
         blacklisted = BlacklistedUser.query.filter_by(email=email).first()
 
@@ -228,6 +228,7 @@ def login():
 
         if email.endswith(suffix) or whitelisted:
             otp = str(secrets.randbelow(900000) + 100000)
+            
             session['pending_email'] = email
             session['otp'] = otp
             session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
@@ -474,7 +475,7 @@ def stats():
 @app.route('/admin/whitelist', methods=['POST'])
 @login_required
 def admin_whitelist():
-    email = request.form.get('email', '').strip()
+    email = request.form.get('email', '').strip().lower()
     if email and len(email) <= 120:
         try:
             db.session.add(WhitelistedEmail(email=email))
@@ -488,7 +489,7 @@ def admin_whitelist():
 @app.route('/admin/blacklist', methods=['POST'])
 @login_required
 def admin_blacklist():
-    email = request.form.get('email', '').strip()
+    email = request.form.get('email', '').strip().lower()
     if email in get_admin_emails():
         abort(403, description="Cannot blacklist an administrator account.")
     if email and len(email) <= 120:
@@ -514,8 +515,23 @@ def admin_wipe_db():
             shutil.copy2(db_path, backup_path)
     elif db_uri.startswith('postgresql'):
         backup_path = f"qa_database_{timestamp}.sql"
+        parsed_uri = urlparse(db_uri)
+        env = os.environ.copy()
+        
+        if parsed_uri.password:
+            env['PGPASSWORD'] = unquote(parsed_uri.password)
+            safe_netloc = parsed_uri.hostname
+            if parsed_uri.port:
+                safe_netloc += f":{parsed_uri.port}"
+            if parsed_uri.username:
+                safe_netloc = f"{unquote(parsed_uri.username)}@{safe_netloc}"
+            
+            safe_uri = parsed_uri._replace(netloc=safe_netloc).geturl()
+        else:
+            safe_uri = db_uri
+
         try:
-            subprocess.run(['pg_dump', db_uri, '-f', backup_path], check=True)
+            subprocess.run(['pg_dump', safe_uri, '-f', backup_path], env=env, check=True)
         except Exception as e:
             logging.error(f"PostgreSQL backup failed: {e}")
             abort(500, description="Pre-wipe backup failed. Database was NOT wiped to prevent data loss.")
