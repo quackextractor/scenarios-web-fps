@@ -43,7 +43,17 @@ app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@school.edu')
 
 mail = Mail(app)
-limiter = Limiter(get_remote_address, app=app, default_limits=["200 per day"])
+
+app.config['RATELIMIT_STORAGE_URI'] = os.environ.get('REDIS_URL', 'memory://')
+
+limiter = Limiter(
+    get_remote_address, 
+    app=app, 
+    default_limits=["200 per day"],
+    # This allows the secure rediss:// connection to work without certificate errors
+    storage_options={"ssl_cert_reqs": None} if "upstash.io" in os.environ.get('REDIS_URL', '') else {}
+)
+
 Compress(app)
 csrf = CSRFProtect(app)
 
