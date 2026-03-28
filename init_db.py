@@ -1,15 +1,11 @@
 from app import app, db
 
 def initialize():
-    print("Connecting to database...")
+    print("Connecting to Neon...")
     with app.app_context():
-        print("Dropping old tables to clear legacy constraints...")
-        db.drop_all()
-
-        print("Creating updated tables...")
+        # This looks at your User/OTP models and creates them in Postgres
         db.create_all()
-
-        print("Success! Your updated schema is ready.")
+        print("Success! Your tables have been created on Neon.")
 
 if __name__ == "__main__":
     initialize()
