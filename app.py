@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 import random
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 import yaml
 import bleach
@@ -73,7 +73,7 @@ class TestSubmission(db.Model):
     scenario_set = db.Column(db.String(50), nullable=False)
     test_date = db.Column(db.String(20), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
-    submission_time = db.Column(db.DateTime, default=datetime.utcnow)
+    submission_time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     test_data = db.Column(db.Text, nullable=False)
 
 class WhitelistedEmail(db.Model):
@@ -152,7 +152,7 @@ def health_check():
         "database": db_status,
         "disk_free_gb": round(disk.free / (1024**3), 2),
         "memory_percent": mem.percent,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }), 200
 
 @app.route('/update_server', methods=['POST'])
@@ -204,7 +204,7 @@ def login():
             otp = str(random.randint(100000, 999999))
             session['pending_email'] = email
             session['otp'] = otp
-            session['otp_expiry'] = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
+            session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
 
             try:
                 msg = Message("Your QA Portal OTP", recipients=[email])
@@ -228,7 +228,7 @@ def verify_otp():
         expiry_timestamp = session.get('otp_expiry')
 
         if otp_in_session and expiry_timestamp:
-            now = datetime.utcnow().timestamp()
+            now = datetime.now(timezone.utc).timestamp()
 
             if now > expiry_timestamp:
                 return render_template('verify_otp.html', error="Your code has expired. Please login again.")
@@ -442,7 +442,7 @@ def admin_blacklist():
 @app.route('/admin/wipe_db', methods=['POST'])
 @login_required
 def admin_wipe_db():
-    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
     backup_path = f"qa_database_{timestamp}.db"
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
 
