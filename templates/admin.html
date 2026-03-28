@@ -22,7 +22,10 @@
         <h3 class="mb-0">QA Submissions Dashboard</h3>
         <div>
             <a href="{{ url_for('export_json') }}" class="btn btn-primary btn-sm me-2">Export to JSON</a>
-            <a href="{{ url_for('admin_logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+            <form action="{{ url_for('admin_logout') }}" method="POST" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
+            </form>
         </div>
     </div>
 </header>

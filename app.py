@@ -149,8 +149,9 @@ def add_security_and_cache_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self' https:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; object-src 'none';"
     response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
 
+    # Fixed: Prevent aggressive caching of authenticated and dynamic content
     if 'Cache-Control' not in response.headers:
-        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
 
 @app.errorhandler(400)
@@ -221,8 +222,9 @@ def webhook():
 def thanks():
     return render_template('thanks.html')
 
+# Fixed: Rate Limiting now relies on the targeted email input
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per minute", key_func=lambda: request.form.get('email', '').strip().lower() if request.method == 'POST' else get_remote_address())
 def login():
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
@@ -243,7 +245,6 @@ def login():
             session['pending_email'] = email
             session['otp'] = otp
             session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
-            session['otp_failures'] = 0
 
             try:
                 msg = Message("Your QA Portal OTP", recipients=[email])
@@ -258,8 +259,9 @@ def login():
 
     return render_template('login.html')
 
+# Fixed: Rate Limiting linked specifically to session email to eliminate global IP NAT blockage
 @app.route('/verify-otp', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per minute", key_func=lambda: session.get('pending_email', get_remote_address()))
 def verify_otp():
     if request.method == 'POST':
         user_otp = request.form.get('otp', '').strip()
@@ -272,28 +274,24 @@ def verify_otp():
             if now > expiry_timestamp:
                 return render_template('verify_otp.html', error="Your code has expired. Please login again.")
 
-            if user_otp == otp_in_session:
+            # Fixed: Prevent Timing Attacks and strict OTP fail wipe to prevent session replay attacks
+            if user_otp and hmac.compare_digest(user_otp, otp_in_session):
                 session['user_email'] = session.get('pending_email')
                 session.pop('otp', None)
                 session.pop('otp_expiry', None)
                 session.pop('pending_email', None)
-                session.pop('otp_failures', None)
                 return redirect(url_for('index'))
             else:
-                failures = session.get('otp_failures', 0) + 1
-                session['otp_failures'] = failures
-                if failures >= 5:
-                    session.pop('otp', None)
-                    session.pop('otp_expiry', None)
-                    session.pop('pending_email', None)
-                    session.pop('otp_failures', None)
-                    return render_template('verify_otp.html', error="Too many failed attempts. Please login again.")
-                return render_template('verify_otp.html', error="Invalid OTP.")
+                session.pop('otp', None)
+                session.pop('otp_expiry', None)
+                session.pop('pending_email', None)
+                return render_template('verify_otp.html', error="Invalid OTP. To ensure security, you must request a new code.")
 
-        return render_template('verify_otp.html', error="Invalid or missing OTP.")
+        return render_template('verify_otp.html', error="Invalid or missing OTP context. Please login again.")
     return render_template('verify_otp.html')
 
-@app.route('/logout')
+# Fixed: Requires POST to prevent CSRF logout attacks
+@app.route('/logout', methods=['POST'])
 def logout():
     session.clear()
     return redirect(url_for('login'))
@@ -451,7 +449,8 @@ def admin_login():
 
     return render_template('admin_login.html')
 
-@app.route('/admin/logout')
+# Fixed: Requires POST to prevent CSRF logout attacks
+@app.route('/admin/logout', methods=['POST'])
 def admin_logout():
     session.clear()
     return redirect(url_for('index'))

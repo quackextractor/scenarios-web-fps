@@ -26,7 +26,10 @@
 
 <main class="container py-5" id="qa-form-content">
     <header class="d-flex justify-content-end mb-2 no-print">
-        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Logout</a>
+        <form action="{{ url_for('logout') }}" method="POST" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-outline-danger btn-sm">Logout</button>
+        </form>
     </header>
 
     <section class="text-center mb-5">
@@ -143,7 +146,7 @@
                                           <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
                                               <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
                                           </label>
-                                     </td>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
