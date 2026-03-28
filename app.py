@@ -14,6 +14,7 @@ from functools import wraps
 import yaml
 import bleach
 import psutil
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import Flask, render_template, request, make_response, jsonify, session, redirect, url_for, abort, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
@@ -32,6 +33,9 @@ log_handler = logging.handlers.RotatingFileHandler('app.log', maxBytes=5000000, 
 logging.basicConfig(handlers=[log_handler], level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 app = Flask(__name__)
+# Apply ProxyFix to ensure Limiter securely reads client IPs behind proxies
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 app.secret_key = os.environ['SECRET_KEY']
 
 app.config['SESSION_COOKIE_SECURE'] = True
@@ -106,8 +110,14 @@ def get_admin_emails():
 def user_login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('user_email'):
+        user_email = session.get('user_email')
+        if not user_email:
             return redirect(url_for('login', next=request.url))
+            
+        if BlacklistedUser.query.filter_by(email=user_email).first():
+            session.clear()
+            return redirect(url_for('login'))
+            
         return f(*args, **kwargs)
     return decorated_function
 
@@ -116,6 +126,10 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         user_email = session.get('user_email')
         admin_emails = get_admin_emails()
+        
+        if user_email and BlacklistedUser.query.filter_by(email=user_email).first():
+            session.clear()
+            return redirect(url_for('login'))
 
         if not session.get('admin_logged_in') and (not user_email or user_email not in admin_emails):
             return redirect(url_for('admin_login', next=request.url))
@@ -127,10 +141,7 @@ def add_security_and_cache_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    
-    # Updated to restrict eval and tighten default sources
     response.headers['Content-Security-Policy'] = "default-src 'self' https:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; object-src 'none';"
-    
     response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
 
     if 'Cache-Control' not in response.headers:
@@ -173,7 +184,7 @@ def webhook():
         logging.warning("Webhook missing signature")
         abort(400, description="Missing signature")
 
-    webhook_secret = os.environ.get('WEBHOOK_SECRET', '')
+    webhook_secret = os.environ['WEBHOOK_SECRET']
     secret = bytes(webhook_secret, 'utf-8')
     mac = hmac.new(secret, msg=request.data, digestmod=hashlib.sha256)
     expected_signature = "sha256=" + mac.hexdigest()
@@ -212,7 +223,6 @@ def login():
             return render_template('login.html', error="Your account has been blocked.")
 
         if email.endswith(suffix) or whitelisted:
-            # Replaced insecure random with secrets module
             otp = str(secrets.randbelow(900000) + 100000)
             session['pending_email'] = email
             session['otp'] = otp
@@ -257,7 +267,6 @@ def verify_otp():
 
 @app.route('/logout')
 def logout():
-    # Clears entire session object rather than just popping the email
     session.clear()
     return redirect(url_for('login'))
 
@@ -278,6 +287,9 @@ def index():
         if not test_date or not duration.isdigit() or not selected_scenario:
             logging.warning("Invalid input data submitted.")
             abort(400, description="Invalid data provided. Make sure to select a scenario.")
+            
+        if len(test_date) > 20:
+            abort(400, description="Test date format exceeds length constraints.")
 
         if selected_scenario in submitted_scenarios:
             abort(400, description="You have already submitted a report for this scenario. Please edit it instead.")
@@ -337,6 +349,9 @@ def edit_submission(submission_id):
 
         if not test_date or not duration.isdigit():
             abort(400, description="Invalid data provided.")
+            
+        if len(test_date) > 20:
+            abort(400, description="Test date format exceeds length constraints.")
 
         target_scenario = next((s for s in SCENARIOS if s['id'] == editing_scenario), None)
         if not target_scenario:
@@ -385,9 +400,12 @@ def admin_login():
             session['admin_logged_in'] = True
             
             if next_page:
-                parsed_next = urlparse(next_page)
-                if parsed_next.netloc != '' or parsed_next.scheme != '':
+                if not next_page.startswith('/') or next_page.startswith('//') or next_page.startswith('\\\\'):
                     next_page = None
+                else:
+                    parsed_next = urlparse(next_page)
+                    if parsed_next.netloc != '' or parsed_next.scheme != '':
+                        next_page = None
 
             return redirect(next_page or url_for('admin_dashboard'))
 
@@ -452,13 +470,20 @@ def admin_blacklist():
 @login_required
 def admin_wipe_db():
     timestamp = datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
-    backup_path = f"qa_database_{timestamp}.db"
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
 
     if db_uri.startswith('sqlite:///'):
+        backup_path = f"qa_database_{timestamp}.db"
         db_path = db_uri.replace('sqlite:///', '')
         if os.path.exists(db_path):
             shutil.copy2(db_path, backup_path)
+    elif db_uri.startswith('postgresql'):
+        backup_path = f"qa_database_{timestamp}.sql"
+        try:
+            subprocess.run(['pg_dump', db_uri, '-f', backup_path], check=True)
+        except Exception as e:
+            logging.error(f"PostgreSQL backup failed: {e}")
+            abort(500, description="Pre-wipe backup failed. Database was NOT wiped to prevent data loss.")
 
     db.drop_all()
     db.create_all()
