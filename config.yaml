@@ -1,5 +1,3 @@
-admin_emails:
-  - admin@school.edu
 scenarios:
   - id: "TS-A-01"
     title: "First Blood & Loot Collection"

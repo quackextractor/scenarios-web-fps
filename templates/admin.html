@@ -79,7 +79,7 @@
                 <h2 class="accordion-header" id="heading-{{ sub.id }}">
                     <button class="accordion-button collapsed py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ sub.id }}" aria-expanded="false" aria-controls="collapse-{{ sub.id }}">
                         <div class="w-100 d-flex justify-content-between align-items-center pe-3">
-                            <span><strong>{{ sub.tester_name }}</strong> <span class="text-muted ms-2">| {{ sub.test_date }}</span></span>
+                            <span><strong>{{ sub.email }}</strong> <span class="badge bg-primary ms-2">{{ sub.scenario_set }}</span> <span class="text-muted ms-2">| {{ sub.test_date }}</span></span>
                             <span class="badge bg-secondary rounded-pill">{{ sub.duration }} mins</span>
                         </div>
                     </button>
@@ -87,7 +87,7 @@
                 <div id="collapse-{{ sub.id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ sub.id }}" data-bs-parent="#submissionsAccordion">
                     <div class="accordion-body bg-light">
                         <div class="mb-3 text-muted small">Submitted System Time: {{ sub.submission_time.strftime('%Y-%m-%d %H:%M:%S') }}</div>
-                        
+
                         {% for scenario_id, data in sub.parsed_data.items() %}
                         <div class="card mb-3 border-0 shadow-sm">
                             <div class="card-header bg-white fw-bold text-primary">
@@ -140,7 +140,7 @@
             </div>
             {% endfor %}
         </div>
-        
+
         <nav aria-label="Page navigation" class="mt-4">
             <ul class="pagination justify-content-center">
                 <li class="page-item {% if not submissions.has_prev %}disabled{% endif %}">

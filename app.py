@@ -44,14 +44,12 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'norep
 
 mail = Mail(app)
 
-# Explicitly set the rate limiter to use Redis if available, or fallback to memory
 app.config['RATELIMIT_STORAGE_URI'] = os.environ.get('REDIS_URL', 'memory://')
 
 limiter = Limiter(
-    get_remote_address, 
-    app=app, 
+    get_remote_address,
+    app=app,
     default_limits=["200 per day"],
-    # This allows the secure rediss:// connection to work without certificate errors
     storage_options={"ssl_cert_reqs": None} if "upstash.io" in os.environ.get('REDIS_URL', '') else {}
 )
 
@@ -64,15 +62,15 @@ if db_uri.startswith('sqlite:///'):
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = db_uri
-    
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
 class TestSubmission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), nullable=True)
-    tester_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(120), nullable=False)
+    scenario_set = db.Column(db.String(50), nullable=False)
     test_date = db.Column(db.String(20), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
     submission_time = db.Column(db.DateTime, default=datetime.utcnow)
@@ -94,12 +92,24 @@ with open(config_path, 'r') as config_file:
     config_data = yaml.safe_load(config_file)
     SCENARIOS = config_data.get('scenarios', [])
 
+def get_admin_emails():
+    admins = os.environ.get('ADMIN_EMAILS', '')
+    return [email.strip() for email in admins.split(',') if email.strip()]
+
+def user_login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_email'):
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_email = session.get('user_email')
-        admin_emails = config_data.get('admin_emails', [])
-        
+        admin_emails = get_admin_emails()
+
         if not session.get('admin_logged_in') and (not user_email or user_email not in admin_emails):
             return redirect(url_for('admin_login', next=request.url))
         return f(*args, **kwargs)
@@ -112,7 +122,7 @@ def add_security_and_cache_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Content-Security-Policy'] = "default-src 'self' https: 'unsafe-inline' 'unsafe-eval';"
     response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
-    
+
     if 'Cache-Control' not in response.headers:
         response.headers['Cache-Control'] = 'public, max-age=3600'
     return response
@@ -157,7 +167,7 @@ def webhook():
     secret = bytes(webhook_secret, 'utf-8')
     mac = hmac.new(secret, msg=request.data, digestmod=hashlib.sha256)
     expected_signature = "sha256=" + mac.hexdigest()
-    
+
     if not hmac.compare_digest(expected_signature, signature):
         logging.warning("Webhook invalid signature")
         abort(403, description="Invalid signature")
@@ -165,15 +175,16 @@ def webhook():
     repo_dir = os.environ.get('REPO_DIR')
     if repo_dir:
         subprocess.call(['git', 'pull'], cwd=repo_dir)
-    
+
     wsgi_file = os.environ.get('WSGI_FILE')
     if wsgi_file:
         os.utime(wsgi_file, None)
-    
+
     logging.info("Server updated via webhook successfully.")
     return "Updated successfully", 200
 
 @app.route('/thanks')
+@user_login_required
 def thanks():
     return render_template('thanks.html')
 
@@ -193,20 +204,19 @@ def login():
             otp = str(random.randint(100000, 999999))
             session['pending_email'] = email
             session['otp'] = otp
-            # Secure enhancement: Set OTP to expire in 10 minutes
             session['otp_expiry'] = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
-            
+
             try:
                 msg = Message("Your QA Portal OTP", recipients=[email])
                 msg.body = f"Your login verification code is {otp}. It expires in 10 minutes."
                 mail.send(msg)
             except Exception as e:
                 logging.error(f"Failed to send OTP to {email}: {e}")
-                
+
             return redirect(url_for('verify_otp'))
         else:
             return render_template('login.html', error="Unauthorized email domain.")
-            
+
     return render_template('login.html')
 
 @app.route('/verify-otp', methods=['GET', 'POST'])
@@ -219,8 +229,7 @@ def verify_otp():
 
         if otp_in_session and expiry_timestamp:
             now = datetime.utcnow().timestamp()
-            
-            # Secure enhancement: Check if the current time has passed the expiration deadline
+
             if now > expiry_timestamp:
                 return render_template('verify_otp.html', error="Your code has expired. Please login again.")
 
@@ -234,74 +243,81 @@ def verify_otp():
         return render_template('verify_otp.html', error="Invalid or missing OTP.")
     return render_template('verify_otp.html')
 
+@app.route('/logout')
+def logout():
+    session.pop('user_email', None)
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET', 'POST'])
+@user_login_required
 def index():
+    user_email = session.get('user_email')
+
     scenario_sets = {}
     for scenario in SCENARIOS:
         set_prefix = scenario['id'].rsplit('-', 1)[0]
         if set_prefix not in scenario_sets:
             scenario_sets[set_prefix] = []
         scenario_sets[set_prefix].append(scenario)
-        
+
     test_app_url = os.environ.get('TEST_APP_URL')
 
+    existing_submissions = TestSubmission.query.filter_by(email=user_email).all()
+    submitted_sets = {sub.scenario_set: sub.id for sub in existing_submissions}
+
     if request.method == 'POST':
-        tester_name = request.form.get('tester_name', '').strip()
-        if len(tester_name) > 100:
-            abort(400)
-            
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
-        selected_sets = request.form.getlist('selected_sets')
-        
-        if not tester_name or not test_date or not duration.isdigit() or not selected_sets:
+        selected_set = request.form.get('selected_set')
+
+        if not test_date or not duration.isdigit() or not selected_set:
             logging.warning("Invalid input data submitted.")
-            abort(400, description="Invalid data provided. Make sure to select at least one scenario set.")
+            abort(400, description="Invalid data provided. Make sure to select a scenario set.")
+
+        if selected_set in submitted_sets:
+            abort(400, description="You have already submitted a report for this scenario set. Please edit it instead.")
 
         results = {}
-        for scenario in SCENARIOS:
-            set_prefix = scenario['id'].rsplit('-', 1)[0]
-            if set_prefix not in selected_sets:
-                continue
-              
+        for scenario in scenario_sets.get(selected_set, []):
             s_id = scenario['id']
             steps_data = []
             for i in range(len(scenario['steps'])):
                 step_val = request.form.get(f"{s_id}_step_{i}")
                 steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
-            
+
             results[s_id] = {
                 'steps': steps_data,
                 'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
                 'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
             }
-        
+
         new_submission = TestSubmission(
-            email=session.get('user_email'),
-            tester_name=tester_name,
+            email=user_email,
+            scenario_set=selected_set,
             test_date=test_date,
             duration=int(duration),
             test_data=json.dumps(results)
         )
-        
+
         try:
             db.session.add(new_submission)
             db.session.commit()
-            logging.info(f"New submission saved securely from {tester_name}.")
+            logging.info(f"New submission saved securely from {user_email}.")
             return redirect(url_for('thanks'))
         except Exception as e:
             db.session.rollback()
             logging.error(f"Database error during submission: {e}")
             abort(500, description="An error occurred while saving your submission.")
 
-    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=None, parsed_data={})
+    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=None, parsed_data={}, submitted_sets=submitted_sets, user_email=user_email)
 
 @app.route('/edit/<int:submission_id>', methods=['GET', 'POST'])
+@user_login_required
 def edit_submission(submission_id):
     sub = TestSubmission.query.get_or_404(submission_id)
     user_email = session.get('user_email')
-    
-    if not user_email or user_email != sub.email:
+
+    if user_email != sub.email:
         abort(403, description="You are not authorized to edit this submission.")
 
     scenario_sets = {}
@@ -311,37 +327,29 @@ def edit_submission(submission_id):
             scenario_sets[set_prefix] = []
         scenario_sets[set_prefix].append(scenario)
 
+    editing_set = sub.scenario_set
+
     if request.method == 'POST':
-        tester_name = request.form.get('tester_name', '').strip()
-        if len(tester_name) > 100:
-            abort(400)
-            
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
-        selected_sets = request.form.getlist('selected_sets')
 
-        if not tester_name or not test_date or not duration.isdigit() or not selected_sets:
+        if not test_date or not duration.isdigit():
             abort(400, description="Invalid data provided.")
 
         results = {}
-        for scenario in SCENARIOS:
-            set_prefix = scenario['id'].rsplit('-', 1)[0]
-            if set_prefix not in selected_sets:
-                continue
-              
+        for scenario in scenario_sets.get(editing_set, []):
             s_id = scenario['id']
             steps_data = []
             for i in range(len(scenario['steps'])):
                 step_val = request.form.get(f"{s_id}_step_{i}")
                 steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
-            
+
             results[s_id] = {
                 'steps': steps_data,
                 'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
                 'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
             }
 
-        sub.tester_name = tester_name
         sub.test_date = test_date
         sub.duration = int(duration)
         sub.test_data = json.dumps(results)
@@ -361,7 +369,7 @@ def edit_submission(submission_id):
         parsed_data = {}
 
     test_app_url = os.environ.get('TEST_APP_URL')
-    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data)
+    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data, submitted_sets={}, editing_set=editing_set, user_email=user_email)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -369,13 +377,13 @@ def admin_login():
         password = request.form.get('password', '')
         admin_pass = os.environ['ADMIN_PASSWORD']
         next_page = request.args.get('next')
-        
+
         if hmac.compare_digest(password.encode('utf-8'), admin_pass.encode('utf-8')):
             session['admin_logged_in'] = True
             return redirect(next_page or url_for('admin_dashboard'))
-            
+
         return render_template('admin_login.html', error="Invalid credentials.")
-        
+
     return render_template('admin_login.html')
 
 @app.route('/admin/logout')
@@ -393,7 +401,7 @@ def admin_dashboard():
             sub.parsed_data = json.loads(sub.test_data)
         except json.JSONDecodeError:
             sub.parsed_data = {}
-            
+
     return render_template('admin.html', submissions=submissions)
 
 @app.route('/stats', methods=['GET'])
@@ -421,7 +429,7 @@ def admin_whitelist():
 @login_required
 def admin_blacklist():
     email = request.form.get('email', '').strip()
-    if email in config_data.get('admin_emails', []):
+    if email in get_admin_emails():
         abort(403, description="Cannot blacklist an administrator account.")
     if email:
         try:
@@ -437,12 +445,12 @@ def admin_wipe_db():
     timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
     backup_path = f"qa_database_{timestamp}.db"
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
-    
+
     if db_uri.startswith('sqlite:///'):
         db_path = db_uri.replace('sqlite:///', '')
         if os.path.exists(db_path):
             shutil.copy2(db_path, backup_path)
-            
+
     db.drop_all()
     db.create_all()
     return redirect(url_for('admin_dashboard'))
@@ -461,10 +469,11 @@ def export_json():
                 parsed_test_data = json.loads(sub.test_data)
             except json.JSONDecodeError:
                 parsed_test_data = {}
-                
+
             item = {
                 "id": sub.id,
-                "tester_name": sub.tester_name,
+                "email": sub.email,
+                "scenario_set": sub.scenario_set,
                 "test_date": sub.test_date,
                 "duration_minutes": sub.duration,
                 "submission_time": sub.submission_time.isoformat(),
@@ -472,7 +481,7 @@ def export_json():
             }
             yield json.dumps(item)
         yield ']'
-    
+
     response = make_response(app.response_class(stream_with_context(generate()), mimetype='application/json'))
     response.headers["Content-Disposition"] = "attachment; filename=industrialist_qa_export.json"
     response.headers["Content-Type"] = "application/json"

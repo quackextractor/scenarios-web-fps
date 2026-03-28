@@ -15,16 +15,20 @@
         .table-radio { text-align: center; vertical-align: middle; }
         .table-radio label { cursor: pointer; display: block; width: 100%; height: 100%; margin-bottom: 0; padding: .5rem 0; }
         .scenario-set-container { transition: all 0.3s ease-in-out; }
-        @media print { 
-            .no-print { display: none !important; } 
-            .scenario-card { page-break-inside: avoid; margin-bottom: 4rem; box-shadow: none; border: 1px solid #dee2e6; } 
-            body { background-color: #fff !important; } 
+        @media print {
+            .no-print { display: none !important; }
+            .scenario-card { page-break-inside: avoid; margin-bottom: 4rem; box-shadow: none; border: 1px solid #dee2e6; }
+            body { background-color: #fff !important; }
         }
     </style>
 </head>
 <body>
 
 <div class="container py-5" id="qa-form-content">
+    <div class="d-flex justify-content-end mb-2 no-print">
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-sm">Logout</a>
+    </div>
+
     <div class="text-center mb-5">
         <h1 class="display-4 fw-bold text-dark">INDUSTRIALIST QA</h1>
         <p class="lead text-muted mb-2">Descent Into Darkness | Unmoderated Testing Portal</p>
@@ -33,14 +37,32 @@
         {% endif %}
     </div>
 
+    {% if not edit_sub and submitted_sets %}
+    <div class="card mb-4 shadow-sm border-0 no-print">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">Your Submitted Reports</h5>
+        </div>
+        <div class="card-body">
+            <ul class="list-group">
+                {% for set_name, sub_id in submitted_sets.items() %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Scenario Set: {{ set_name }}
+                    <a href="{{ url_for('edit_submission', submission_id=sub_id) }}" class="btn btn-sm btn-outline-primary">Edit Report</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
     <form method="POST" action="{% if edit_sub %}{{ url_for('edit_submission', submission_id=edit_sub.id) }}{% else %}{{ url_for('index') }}{% endif %}" id="qa-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-        
+
         <div class="card mb-4 shadow-sm border-0">
             <div class="card-body row g-3 bg-white rounded">
                 <div class="col-md-4">
-                    <label class="form-label fw-bold text-secondary" for="tester_name">Tester Name</label>
-                    <input type="text" id="tester_name" name="tester_name" class="form-control" value="{{ edit_sub.tester_name if edit_sub else '' }}" required maxlength="100">
+                    <label class="form-label fw-bold text-secondary">Tester Email</label>
+                    <input type="text" class="form-control" value="{{ user_email }}" disabled>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold text-secondary" for="test_date">Date</label>
@@ -58,16 +80,21 @@
                 <h4 class="mb-0">Test Configuration</h4>
             </div>
             <div class="card-body">
-                <p class="mb-3">Please select the scenario sets you are testing during this session. You can select multiple sets.</p>
+                <p class="mb-3">Please select the scenario set you are testing during this session. You can only submit one report at a time.</p>
                 <div class="d-flex flex-wrap gap-4">
-                    {% for set_name in scenario_sets.keys() %}
-                    <div class="form-check">
-                        <input class="form-check-input set-selector" type="checkbox" name="selected_sets" value="{{ set_name }}" id="check_{{ set_name }}" style="transform: scale(1.2);" {% if parsed_data %}checked{% endif %}>
-                        <label class="form-check-label fw-bold ms-2" for="check_{{ set_name }}">
-                            Scenario Set: {{ set_name }}
-                        </label>
-                    </div>
-                    {% endfor %}
+                    {% if edit_sub %}
+                        <input type="hidden" name="selected_set" value="{{ editing_set }}">
+                        <p class="fw-bold mb-0">Editing Scenario Set: {{ editing_set }}</p>
+                    {% else %}
+                        {% for set_name in scenario_sets.keys() %}
+                        <div class="form-check">
+                            <input class="form-check-input set-selector" type="radio" name="selected_set" value="{{ set_name }}" id="radio_{{ set_name }}" style="transform: scale(1.2);" required {% if set_name in submitted_sets %}disabled{% endif %}>
+                            <label class="form-check-label fw-bold ms-2 {% if set_name in submitted_sets %}text-muted{% endif %}" for="radio_{{ set_name }}">
+                                Scenario Set: {{ set_name }} {% if set_name in submitted_sets %}(Already Submitted){% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -75,7 +102,7 @@
         {% for set_name, scenarios in scenario_sets.items() %}
         <div class="scenario-set-container" id="container_{{ set_name }}">
             <h3 class="mb-4 pb-2 border-bottom text-primary">Testing Suite: {{ set_name }}</h3>
-            
+
             {% for scenario in scenarios %}
             <div class="card scenario-card bg-white" data-scenario-id="{{ scenario.id }}">
                 <div class="card-header bg-dark text-white">
@@ -85,7 +112,7 @@
                     <div class="alert alert-secondary border-0">
                         <strong>Context:</strong> {{ scenario.context }}
                     </div>
-                    
+
                     <table class="table table-bordered table-striped mt-3">
                         <thead class="table-light">
                             <tr>
@@ -109,14 +136,14 @@
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" class="form-check-input m-0 step-radio" required {% if current_val == 'pass' %}checked{% endif %}>
                                     </label>
                                 </td>
-                                 <td class="table-radio p-0">
+                                <td class="table-radio p-0">
                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" {% if current_val == 'fail' %}checked{% endif %}>
                                      </label>
                                 </td>
                                 <td class="table-radio p-0">
                                       <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
-                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
+                                         <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
                                       </label>
                                 </td>
                             </tr>
@@ -148,42 +175,41 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.scenario-set-container').forEach(container => {
-            container.classList.add('d-none');
-            container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
-                input.disabled = true;
-            });
+            {% if edit_sub %}
+                if (container.id !== 'container_{{ editing_set }}') {
+                    container.classList.add('d-none');
+                } else {
+                    container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
+                        input.disabled = false;
+                    });
+                }
+            {% else %}
+                container.classList.add('d-none');
+                container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
+                    input.disabled = true;
+                });
+            {% endif %}
         });
 
-        document.querySelectorAll('.set-selector').forEach(checkbox => {
-            if(checkbox.checked) {
-                const container = document.getElementById('container_' + checkbox.value);
+        document.querySelectorAll('.set-selector').forEach(radio => {
+            radio.addEventListener('change', function() {
+                document.querySelectorAll('.scenario-set-container').forEach(container => {
+                    container.classList.add('d-none');
+                    container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
+                        input.disabled = true;
+                        if (input.type === 'radio') input.checked = false;
+                        else input.value = '';
+                    });
+                });
+
+                const container = document.getElementById('container_' + this.value);
                 if(container) {
                     container.classList.remove('d-none');
                     container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
                         input.disabled = false;
                     });
                 }
-            }
-        });
-    });
-
-    document.querySelectorAll('.set-selector').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const container = document.getElementById('container_' + this.value);
-            if(!container) return;
-            const inputs = container.querySelectorAll('.step-radio, .input-toggle');
-            
-            if (this.checked) {
-                container.classList.remove('d-none');
-                inputs.forEach(input => input.disabled = false);
-            } else {
-                container.classList.add('d-none');
-                inputs.forEach(input => {
-                    input.disabled = true;
-                    if (input.type === 'radio') input.checked = false;
-                    else input.value = '';
-                });
-            }
+            });
         });
     });
 
@@ -194,13 +220,13 @@
             const issueTextarea = document.getElementById(scenarioId + '_issue');
             const allRadios = scenarioCard.querySelectorAll('.step-radio');
             let requiresExplanation = false;
-           
+
             allRadios.forEach(radio => {
                 if (radio.checked && (radio.value === 'fail' || radio.value === 'hard')) {
                     requiresExplanation = true;
                 }
             });
-         
+
             issueTextarea.required = requiresExplanation;
             if (requiresExplanation) {
                 issueTextarea.classList.add('border-danger');
