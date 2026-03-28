@@ -7,7 +7,7 @@ import logging
 import logging.handlers
 import random
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import yaml
 import bleach
@@ -44,6 +44,7 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'norep
 
 mail = Mail(app)
 
+# Explicitly set the rate limiter to use Redis if available, or fallback to memory
 app.config['RATELIMIT_STORAGE_URI'] = os.environ.get('REDIS_URL', 'memory://')
 
 limiter = Limiter(
@@ -192,10 +193,12 @@ def login():
             otp = str(random.randint(100000, 999999))
             session['pending_email'] = email
             session['otp'] = otp
+            # Secure enhancement: Set OTP to expire in 10 minutes
+            session['otp_expiry'] = (datetime.utcnow() + timedelta(minutes=10)).timestamp()
             
             try:
                 msg = Message("Your QA Portal OTP", recipients=[email])
-                msg.body = f"Your login verification code is {otp}"
+                msg.body = f"Your login verification code is {otp}. It expires in 10 minutes."
                 mail.send(msg)
             except Exception as e:
                 logging.error(f"Failed to send OTP to {email}: {e}")
@@ -211,12 +214,24 @@ def login():
 def verify_otp():
     if request.method == 'POST':
         user_otp = request.form.get('otp', '').strip()
-        if user_otp == session.get('otp'):
-            session['user_email'] = session.get('pending_email')
-            session.pop('otp', None)
-            session.pop('pending_email', None)
-            return redirect(url_for('index'))
-        return render_template('verify_otp.html', error="Invalid OTP.")
+        otp_in_session = session.get('otp')
+        expiry_timestamp = session.get('otp_expiry')
+
+        if otp_in_session and expiry_timestamp:
+            now = datetime.utcnow().timestamp()
+            
+            # Secure enhancement: Check if the current time has passed the expiration deadline
+            if now > expiry_timestamp:
+                return render_template('verify_otp.html', error="Your code has expired. Please login again.")
+
+            if user_otp == otp_in_session:
+                session['user_email'] = session.get('pending_email')
+                session.pop('otp', None)
+                session.pop('otp_expiry', None)
+                session.pop('pending_email', None)
+                return redirect(url_for('index'))
+
+        return render_template('verify_otp.html', error="Invalid or missing OTP.")
     return render_template('verify_otp.html')
 
 @app.route('/', methods=['GET', 'POST'])
