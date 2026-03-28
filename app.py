@@ -21,6 +21,7 @@ from flask_mail import Mail, Message
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
@@ -75,6 +76,10 @@ class TestSubmission(db.Model):
     duration = db.Column(db.Integer, nullable=False)
     submission_time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     test_data = db.Column(db.Text, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('email', 'scenario_set', name='unique_email_scenario_set'),
+    )
 
 class WhitelistedEmail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -304,6 +309,9 @@ def index():
             db.session.commit()
             logging.info(f"New submission saved securely from {user_email}.")
             return redirect(url_for('thanks'))
+        except IntegrityError:
+            db.session.rollback()
+            abort(400, description="Database verification failed: You have already submitted a report for this specific scenario set.")
         except Exception as e:
             db.session.rollback()
             logging.error(f"Database error during submission: {e}")
