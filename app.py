@@ -33,7 +33,6 @@ log_handler = logging.handlers.RotatingFileHandler('app.log', maxBytes=5000000, 
 logging.basicConfig(handlers=[log_handler], level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 app = Flask(__name__)
-# Apply ProxyFix to ensure Limiter securely reads client IPs behind proxies
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.secret_key = os.environ['SECRET_KEY']
@@ -113,7 +112,7 @@ def user_login_required(f):
     def decorated_function(*args, **kwargs):
         user_email = session.get('user_email')
         if not user_email:
-            return redirect(url_for('login', next=request.url))
+            return redirect(url_for('login', next=request.full_path))
             
         if BlacklistedUser.query.filter_by(email=user_email).first():
             session.clear()
@@ -133,7 +132,7 @@ def login_required(f):
             return redirect(url_for('login'))
 
         if not session.get('admin_logged_in') and (not user_email or user_email not in admin_emails):
-            return redirect(url_for('admin_login', next=request.url))
+            return redirect(url_for('admin_login', next=request.full_path))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -187,7 +186,7 @@ def webhook():
 
     webhook_secret = os.environ['WEBHOOK_SECRET']
     secret = bytes(webhook_secret, 'utf-8')
-    mac = hmac.new(secret, msg=request.data, digestmod=hashlib.sha256)
+    mac = hmac.new(secret, msg=request.get_data(), digestmod=hashlib.sha256)
     expected_signature = "sha256=" + mac.hexdigest()
 
     if not hmac.compare_digest(expected_signature, signature):
@@ -216,6 +215,10 @@ def thanks():
 def login():
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
+        
+        if len(email) > 120:
+            return render_template('login.html', error="Email exceeds maximum length allowed.")
+            
         suffix = os.environ['SCHOOL_EMAIL_SUFFIX']
         whitelisted = WhitelistedEmail.query.filter_by(email=email).first()
         blacklisted = BlacklistedUser.query.filter_by(email=email).first()
@@ -228,6 +231,7 @@ def login():
             session['pending_email'] = email
             session['otp'] = otp
             session['otp_expiry'] = (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()
+            session['otp_failures'] = 0
 
             try:
                 msg = Message("Your QA Portal OTP", recipients=[email])
@@ -261,7 +265,18 @@ def verify_otp():
                 session.pop('otp', None)
                 session.pop('otp_expiry', None)
                 session.pop('pending_email', None)
+                session.pop('otp_failures', None)
                 return redirect(url_for('index'))
+            else:
+                failures = session.get('otp_failures', 0) + 1
+                session['otp_failures'] = failures
+                if failures >= 5:
+                    session.pop('otp', None)
+                    session.pop('otp_expiry', None)
+                    session.pop('pending_email', None)
+                    session.pop('otp_failures', None)
+                    return render_template('verify_otp.html', error="Too many failed attempts. Please login again.")
+                return render_template('verify_otp.html', error="Invalid OTP.")
 
         return render_template('verify_otp.html', error="Invalid or missing OTP.")
     return render_template('verify_otp.html')
@@ -286,7 +301,7 @@ def index():
         duration = request.form.get('duration', '').strip()
         selected_scenario = request.form.get('selected_scenario')
 
-        if not test_date or not duration.isdigit() or not selected_scenario:
+        if not test_date or not duration.isdigit() or len(duration) > 8 or not selected_scenario:
             logging.warning("Invalid input data submitted.")
             abort(400, description="Invalid data provided. Make sure to select a scenario.")
             
@@ -356,7 +371,7 @@ def edit_submission(submission_id):
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
 
-        if not test_date or not duration.isdigit():
+        if not test_date or not duration.isdigit() or len(duration) > 8:
             abort(400, description="Invalid data provided.")
             
         if len(test_date) > 20:
@@ -405,6 +420,7 @@ def edit_submission(submission_id):
     return render_template('index.html', scenarios=SCENARIOS, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data, submitted_scenarios={}, editing_scenario=editing_scenario, user_email=user_email)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def admin_login():
     if request.method == 'POST':
         password = request.form.get('password', '')
@@ -459,12 +475,14 @@ def stats():
 @login_required
 def admin_whitelist():
     email = request.form.get('email', '').strip()
-    if email:
+    if email and len(email) <= 120:
         try:
             db.session.add(WhitelistedEmail(email=email))
             db.session.commit()
         except Exception:
             db.session.rollback()
+    elif len(email) > 120:
+        abort(400, description="Email too long.")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/blacklist', methods=['POST'])
@@ -473,12 +491,14 @@ def admin_blacklist():
     email = request.form.get('email', '').strip()
     if email in get_admin_emails():
         abort(403, description="Cannot blacklist an administrator account.")
-    if email:
+    if email and len(email) <= 120:
         try:
             db.session.add(BlacklistedUser(email=email))
             db.session.commit()
         except Exception:
             db.session.rollback()
+    elif len(email) > 120:
+        abort(400, description="Email too long.")
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/wipe_db', methods=['POST'])
