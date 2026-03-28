@@ -4,33 +4,47 @@ import hmac
 import hashlib
 import subprocess
 import logging
+import logging.handlers
+import random
+import shutil
 from datetime import datetime
 from functools import wraps
 import yaml
-from flask import Flask, render_template, request, make_response, jsonify, session, redirect, url_for, abort
+import bleach
+import psutil
+from flask import Flask, render_template, request, make_response, jsonify, session, redirect, url_for, abort, stream_with_context
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from flask_wtf.csrf import CSRFProtect
 from flask_compress import Compress
-
-# Configure application logging (Checklist 9.1, 9.2)
-logging.basicConfig(filename='app.log', level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+from flask_mail import Mail, Message
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from sqlalchemy import text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'fallback_secret_key')
+log_handler = logging.handlers.RotatingFileHandler('app.log', maxBytes=5000000, backupCount=5)
+logging.basicConfig(handlers=[log_handler], level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-# Security configuration for cookies (Checklist 7.6)
+app = Flask(__name__)
+app.secret_key = os.environ['SECRET_KEY']
+
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-# Enable GZIP Compression (Checklist 3.7, 4.8)
-Compress(app)
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'localhost')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 25))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'False') == 'True'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@school.edu')
 
-# Enable CSRF Protection (Checklist 7.3)
+mail = Mail(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=["200 per day"])
+Compress(app)
 csrf = CSRFProtect(app)
 
 db_uri = os.environ.get('DATABASE_URI', 'sqlite:///qa_database.db')
@@ -46,17 +60,25 @@ db = SQLAlchemy(app)
 
 class TestSubmission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), nullable=True)
     tester_name = db.Column(db.String(100), nullable=False)
     test_date = db.Column(db.String(20), nullable=False)
     duration = db.Column(db.Integer, nullable=False)
     submission_time = db.Column(db.DateTime, default=datetime.utcnow)
     test_data = db.Column(db.Text, nullable=False)
 
+class WhitelistedEmail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+
+class BlacklistedUser(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+
 with app.app_context():
     db.create_all()
 
 config_path = os.path.join(BASE_DIR, 'config.yaml')
-
 with open(config_path, 'r') as config_file:
     config_data = yaml.safe_load(config_file)
     SCENARIOS = config_data.get('scenarios', [])
@@ -64,7 +86,10 @@ with open(config_path, 'r') as config_file:
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('admin_logged_in'):
+        user_email = session.get('user_email')
+        admin_emails = config_data.get('admin_emails', [])
+        
+        if not session.get('admin_logged_in') and (not user_email or user_email not in admin_emails):
             return redirect(url_for('admin_login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
@@ -74,6 +99,8 @@ def add_security_and_cache_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Content-Security-Policy'] = "default-src 'self' https: 'unsafe-inline' 'unsafe-eval';"
+    response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
     
     if 'Cache-Control' not in response.headers:
         response.headers['Cache-Control'] = 'public, max-age=3600'
@@ -84,22 +111,28 @@ def add_security_and_cache_headers(response):
 @app.errorhandler(404)
 @app.errorhandler(500)
 def handle_errors(e):
-    """Unified error handler for comprehensible user feedback (Checklist 3.3, 3.4)."""
     code = getattr(e, 'code', 500)
     description = getattr(e, 'description', "An unexpected error occurred.")
     return render_template('error.html', code=code, description=description), code
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
-
-@app.route('/stats', methods=['GET'])
-def stats():
     try:
-        total = TestSubmission.query.count()
-        return jsonify({"total_submissions": total}), 200
+        db.session.execute(text('SELECT 1'))
+        db_status = "ok"
     except Exception:
-        return jsonify({"error": "Database error"}), 500
+        db_status = "error"
+
+    disk = shutil.disk_usage('/')
+    mem = psutil.virtual_memory()
+
+    return jsonify({
+        "status": "healthy" if db_status == "ok" else "unhealthy",
+        "database": db_status,
+        "disk_free_gb": round(disk.free / (1024**3), 2),
+        "memory_percent": mem.percent,
+        "timestamp": datetime.utcnow().isoformat()
+    }), 200
 
 @app.route('/update_server', methods=['POST'])
 @csrf.exempt
@@ -131,8 +164,50 @@ def webhook():
 
 @app.route('/thanks')
 def thanks():
-    """Success page to prevent form resubmission on refresh."""
     return render_template('thanks.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        suffix = os.environ['SCHOOL_EMAIL_SUFFIX']
+        whitelisted = WhitelistedEmail.query.filter_by(email=email).first()
+        blacklisted = BlacklistedUser.query.filter_by(email=email).first()
+
+        if blacklisted:
+            return render_template('login.html', error="Your account has been blocked.")
+
+        if email.endswith(suffix) or whitelisted:
+            otp = str(random.randint(100000, 999999))
+            session['pending_email'] = email
+            session['otp'] = otp
+            
+            try:
+                msg = Message("Your QA Portal OTP", recipients=[email])
+                msg.body = f"Your login verification code is {otp}"
+                mail.send(msg)
+            except Exception as e:
+                logging.error(f"Failed to send OTP to {email}: {e}")
+                
+            return redirect(url_for('verify_otp'))
+        else:
+            return render_template('login.html', error="Unauthorized email domain.")
+            
+    return render_template('login.html')
+
+@app.route('/verify-otp', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
+def verify_otp():
+    if request.method == 'POST':
+        user_otp = request.form.get('otp', '').strip()
+        if user_otp == session.get('otp'):
+            session['user_email'] = session.get('pending_email')
+            session.pop('otp', None)
+            session.pop('pending_email', None)
+            return redirect(url_for('index'))
+        return render_template('verify_otp.html', error="Invalid OTP.")
+    return render_template('verify_otp.html')
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -143,8 +218,13 @@ def index():
             scenario_sets[set_prefix] = []
         scenario_sets[set_prefix].append(scenario)
         
+    test_app_url = os.environ.get('TEST_APP_URL')
+
     if request.method == 'POST':
         tester_name = request.form.get('tester_name', '').strip()
+        if len(tester_name) > 100:
+            abort(400)
+            
         test_date = request.form.get('test_date', '').strip()
         duration = request.form.get('duration', '').strip()
         selected_sets = request.form.getlist('selected_sets')
@@ -167,11 +247,12 @@ def index():
             
             results[s_id] = {
                 'steps': steps_data,
-                'issue_log': request.form.get(f"{s_id}_issue", ""),
-                'observations': request.form.get(f"{s_id}_obs", "")
+                'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
+                'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
             }
         
         new_submission = TestSubmission(
+            email=session.get('user_email'),
             tester_name=tester_name,
             test_date=test_date,
             duration=int(duration),
@@ -188,13 +269,80 @@ def index():
             logging.error(f"Database error during submission: {e}")
             abort(500, description="An error occurred while saving your submission.")
 
-    return render_template('index.html', scenario_sets=scenario_sets)
+    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=None, parsed_data={})
+
+@app.route('/edit/<int:submission_id>', methods=['GET', 'POST'])
+def edit_submission(submission_id):
+    sub = TestSubmission.query.get_or_404(submission_id)
+    user_email = session.get('user_email')
+    
+    if not user_email or user_email != sub.email:
+        abort(403, description="You are not authorized to edit this submission.")
+
+    scenario_sets = {}
+    for scenario in SCENARIOS:
+        set_prefix = scenario['id'].rsplit('-', 1)[0]
+        if set_prefix not in scenario_sets:
+            scenario_sets[set_prefix] = []
+        scenario_sets[set_prefix].append(scenario)
+
+    if request.method == 'POST':
+        tester_name = request.form.get('tester_name', '').strip()
+        if len(tester_name) > 100:
+            abort(400)
+            
+        test_date = request.form.get('test_date', '').strip()
+        duration = request.form.get('duration', '').strip()
+        selected_sets = request.form.getlist('selected_sets')
+
+        if not tester_name or not test_date or not duration.isdigit() or not selected_sets:
+            abort(400, description="Invalid data provided.")
+
+        results = {}
+        for scenario in SCENARIOS:
+            set_prefix = scenario['id'].rsplit('-', 1)[0]
+            if set_prefix not in selected_sets:
+                continue
+              
+            s_id = scenario['id']
+            steps_data = []
+            for i in range(len(scenario['steps'])):
+                step_val = request.form.get(f"{s_id}_step_{i}")
+                steps_data.append(step_val if step_val in ['pass', 'fail', 'hard'] else None)
+            
+            results[s_id] = {
+                'steps': steps_data,
+                'issue_log': bleach.clean(request.form.get(f"{s_id}_issue", "")),
+                'observations': bleach.clean(request.form.get(f"{s_id}_obs", ""))
+            }
+
+        sub.tester_name = tester_name
+        sub.test_date = test_date
+        sub.duration = int(duration)
+        sub.test_data = json.dumps(results)
+
+        try:
+            db.session.commit()
+            logging.info(f"Submission {sub.id} successfully updated.")
+            return redirect(url_for('thanks'))
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error updating submission {sub.id}: {e}")
+            abort(500, description="Failed to update your submission.")
+
+    try:
+        parsed_data = json.loads(sub.test_data)
+    except json.JSONDecodeError:
+        parsed_data = {}
+
+    test_app_url = os.environ.get('TEST_APP_URL')
+    return render_template('index.html', scenario_sets=scenario_sets, test_app_url=test_app_url, edit_sub=sub, parsed_data=parsed_data)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     if request.method == 'POST':
         password = request.form.get('password', '')
-        admin_pass = os.environ.get('ADMIN_PASSWORD', 'fallback_admin_password')
+        admin_pass = os.environ['ADMIN_PASSWORD']
         next_page = request.args.get('next')
         
         if hmac.compare_digest(password.encode('utf-8'), admin_pass.encode('utf-8')):
@@ -207,14 +355,15 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    session.pop('admin_logged_in', None)
+    session.clear()
     return redirect(url_for('index'))
 
 @app.route('/admin', methods=['GET'])
 @login_required
 def admin_dashboard():
-    submissions = TestSubmission.query.order_by(TestSubmission.submission_time.desc()).all()
-    for sub in submissions:
+    page = request.args.get('page', 1, type=int)
+    submissions = TestSubmission.query.order_by(TestSubmission.submission_time.desc()).paginate(page=page, per_page=20)
+    for sub in submissions.items:
         try:
             sub.parsed_data = json.loads(sub.test_data)
         except json.JSONDecodeError:
@@ -222,29 +371,84 @@ def admin_dashboard():
             
     return render_template('admin.html', submissions=submissions)
 
+@app.route('/stats', methods=['GET'])
+@login_required
+def stats():
+    try:
+        total = TestSubmission.query.count()
+        return jsonify({"total_submissions": total}), 200
+    except Exception:
+        return jsonify({"error": "Database error"}), 500
+
+@app.route('/admin/whitelist', methods=['POST'])
+@login_required
+def admin_whitelist():
+    email = request.form.get('email', '').strip()
+    if email:
+        try:
+            db.session.add(WhitelistedEmail(email=email))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/blacklist', methods=['POST'])
+@login_required
+def admin_blacklist():
+    email = request.form.get('email', '').strip()
+    if email in config_data.get('admin_emails', []):
+        abort(403, description="Cannot blacklist an administrator account.")
+    if email:
+        try:
+            db.session.add(BlacklistedUser(email=email))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/wipe_db', methods=['POST'])
+@login_required
+def admin_wipe_db():
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    backup_path = f"qa_database_{timestamp}.db"
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    
+    if db_uri.startswith('sqlite:///'):
+        db_path = db_uri.replace('sqlite:///', '')
+        if os.path.exists(db_path):
+            shutil.copy2(db_path, backup_path)
+            
+    db.drop_all()
+    db.create_all()
+    return redirect(url_for('admin_dashboard'))
+
 @app.route('/admin/export/json', methods=['GET'])
 @login_required
 def export_json():
-    """Exports all submissions from the database as a JSON file."""
-    submissions = TestSubmission.query.all()
-    export_data = []
+    def generate():
+        yield '['
+        first = True
+        for sub in TestSubmission.query.yield_per(100):
+            if not first:
+                yield ','
+            first = False
+            try:
+                parsed_test_data = json.loads(sub.test_data)
+            except json.JSONDecodeError:
+                parsed_test_data = {}
+                
+            item = {
+                "id": sub.id,
+                "tester_name": sub.tester_name,
+                "test_date": sub.test_date,
+                "duration_minutes": sub.duration,
+                "submission_time": sub.submission_time.isoformat(),
+                "results": parsed_test_data
+            }
+            yield json.dumps(item)
+        yield ']'
     
-    for sub in submissions:
-        try:
-            parsed_test_data = json.loads(sub.test_data)
-        except json.JSONDecodeError:
-            parsed_test_data = {}
-            
-        export_data.append({
-            "id": sub.id,
-            "tester_name": sub.tester_name,
-            "test_date": sub.test_date,
-            "duration_minutes": sub.duration,
-            "submission_time": sub.submission_time.isoformat(),
-            "results": parsed_test_data
-        })
-    
-    response = make_response(jsonify(export_data))
+    response = make_response(app.response_class(stream_with_context(generate()), mimetype='application/json'))
     response.headers["Content-Disposition"] = "attachment; filename=industrialist_qa_export.json"
     response.headers["Content-Type"] = "application/json"
     return response

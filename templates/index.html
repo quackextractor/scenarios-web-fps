@@ -27,25 +27,28 @@
 <div class="container py-5" id="qa-form-content">
     <div class="text-center mb-5">
         <h1 class="display-4 fw-bold text-dark">INDUSTRIALIST QA</h1>
-        <p class="lead text-muted">Descent Into Darkness | Unmoderated Testing Portal</p>
+        <p class="lead text-muted mb-2">Descent Into Darkness | Unmoderated Testing Portal</p>
+        {% if test_app_url %}
+        <a href="{{ test_app_url }}" target="_blank" class="fw-bold no-print d-block mb-3">Launch Test Application</a>
+        {% endif %}
     </div>
 
-    <form method="POST" action="/" id="qa-form">
+    <form method="POST" action="{% if edit_sub %}{{ url_for('edit_submission', submission_id=edit_sub.id) }}{% else %}{{ url_for('index') }}{% endif %}" id="qa-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         
         <div class="card mb-4 shadow-sm border-0">
             <div class="card-body row g-3 bg-white rounded">
                 <div class="col-md-4">
                     <label class="form-label fw-bold text-secondary" for="tester_name">Tester Name</label>
-                    <input type="text" id="tester_name" name="tester_name" class="form-control" required>
+                    <input type="text" id="tester_name" name="tester_name" class="form-control" value="{{ edit_sub.tester_name if edit_sub else '' }}" required maxlength="100">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold text-secondary" for="test_date">Date</label>
-                    <input type="date" id="test_date" name="test_date" class="form-control" required>
+                    <input type="date" id="test_date" name="test_date" class="form-control" value="{{ edit_sub.test_date if edit_sub else '' }}" required>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label fw-bold text-secondary" for="duration">Duration (Minutes)</label>
-                    <input type="number" id="duration" name="duration" class="form-control" required min="1">
+                    <input type="number" id="duration" name="duration" class="form-control" value="{{ edit_sub.duration if edit_sub else '' }}" required min="1">
                 </div>
             </div>
         </div>
@@ -59,7 +62,7 @@
                 <div class="d-flex flex-wrap gap-4">
                     {% for set_name in scenario_sets.keys() %}
                     <div class="form-check">
-                        <input class="form-check-input set-selector" type="checkbox" name="selected_sets" value="{{ set_name }}" id="check_{{ set_name }}" style="transform: scale(1.2);">
+                        <input class="form-check-input set-selector" type="checkbox" name="selected_sets" value="{{ set_name }}" id="check_{{ set_name }}" style="transform: scale(1.2);" {% if parsed_data %}checked{% endif %}>
                         <label class="form-check-label fw-bold ms-2" for="check_{{ set_name }}">
                             Scenario Set: {{ set_name }}
                         </label>
@@ -70,7 +73,7 @@
         </div>
 
         {% for set_name, scenarios in scenario_sets.items() %}
-        <div class="scenario-set-container d-none" id="container_{{ set_name }}">
+        <div class="scenario-set-container" id="container_{{ set_name }}">
             <h3 class="mb-4 pb-2 border-bottom text-primary">Testing Suite: {{ set_name }}</h3>
             
             {% for scenario in scenarios %}
@@ -96,24 +99,25 @@
                         </thead>
                         <tbody>
                             {% for step in scenario.steps %}
+                            {% set current_val = parsed_data.get(scenario.id, {}).get('steps', [])[loop.index0] if parsed_data else None %}
                             <tr>
                                 <td class="text-center fw-bold align-middle">{{ loop.index }}</td>
                                 <td class="align-middle">{{ step.action }}</td>
                                 <td class="text-muted small align-middle">{{ step.expected }}</td>
                                 <td class="table-radio p-0">
                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_pass" title="Pass">
-                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" class="form-check-input m-0 step-radio" disabled required>
+                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_pass" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="pass" class="form-check-input m-0 step-radio" required {% if current_val == 'pass' %}checked{% endif %}>
                                     </label>
                                 </td>
                                  <td class="table-radio p-0">
-                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
-                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" disabled>
-                                    </label>
+                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_fail" title="Fail">
+                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_fail" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="fail" class="form-check-input m-0 step-radio" {% if current_val == 'fail' %}checked{% endif %}>
+                                     </label>
                                 </td>
                                 <td class="table-radio p-0">
-                                     <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
-                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" disabled>
-                                     </label>
+                                      <label for="{{ scenario.id }}_step_{{ loop.index0 }}_hard" title="Needs Work">
+                                        <input type="radio" id="{{ scenario.id }}_step_{{ loop.index0 }}_hard" name="{{ scenario.id }}_step_{{ loop.index0 }}" value="hard" class="form-check-input m-0 step-radio" {% if current_val == 'hard' %}checked{% endif %}>
+                                      </label>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -122,11 +126,11 @@
 
                     <div class="mt-4">
                         <label class="form-label fw-bold text-danger" for="{{ scenario.id }}_issue">Issue Log (Explain any failed or hard steps)</label>
-                        <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control input-toggle issue-textarea" rows="3" placeholder="Write issues here..." disabled></textarea>
+                        <textarea id="{{ scenario.id }}_issue" name="{{ scenario.id }}_issue" class="form-control input-toggle issue-textarea" rows="3" placeholder="Write issues here...">{{ parsed_data.get(scenario.id, {}).get('issue_log', '') }}</textarea>
                     </div>
                     <div class="mt-4">
                         <label class="form-label fw-bold text-primary" for="{{ scenario.id }}_obs">General Observations</label>
-                        <textarea id="{{ scenario.id }}_obs" name="{{ scenario.id }}_obs" class="form-control input-toggle" rows="3" placeholder="UI confusion, visual glitches, unexpected behaviors..." disabled></textarea>
+                        <textarea id="{{ scenario.id }}_obs" name="{{ scenario.id }}_obs" class="form-control input-toggle" rows="3" placeholder="UI confusion, visual glitches, unexpected behaviors...">{{ parsed_data.get(scenario.id, {}).get('observations', '') }}</textarea>
                     </div>
                 </div>
             </div>
@@ -136,15 +140,37 @@
 
         <div class="d-flex justify-content-between no-print mb-5 mt-4">
             <button type="button" class="btn btn-outline-secondary btn-lg" onclick="exportPDF()">Export View to PDF</button>
-            <button type="submit" class="btn btn-success btn-lg px-5">Submit to Database</button>
+            <button type="submit" class="btn btn-success btn-lg px-5">{% if edit_sub %}Save Changes{% else %}Submit to Database{% endif %}</button>
         </div>
     </form>
 </div>
 
 <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.scenario-set-container').forEach(container => {
+            container.classList.add('d-none');
+            container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
+                input.disabled = true;
+            });
+        });
+
+        document.querySelectorAll('.set-selector').forEach(checkbox => {
+            if(checkbox.checked) {
+                const container = document.getElementById('container_' + checkbox.value);
+                if(container) {
+                    container.classList.remove('d-none');
+                    container.querySelectorAll('.step-radio, .input-toggle').forEach(input => {
+                        input.disabled = false;
+                    });
+                }
+            }
+        });
+    });
+
     document.querySelectorAll('.set-selector').forEach(checkbox => {
         checkbox.addEventListener('change', function() {
             const container = document.getElementById('container_' + this.value);
+            if(!container) return;
             const inputs = container.querySelectorAll('.step-radio, .input-toggle');
             
             if (this.checked) {
@@ -168,13 +194,13 @@
             const issueTextarea = document.getElementById(scenarioId + '_issue');
             const allRadios = scenarioCard.querySelectorAll('.step-radio');
             let requiresExplanation = false;
-            
+           
             allRadios.forEach(radio => {
                 if (radio.checked && (radio.value === 'fail' || radio.value === 'hard')) {
                     requiresExplanation = true;
                 }
             });
-            
+         
             issueTextarea.required = requiresExplanation;
             if (requiresExplanation) {
                 issueTextarea.classList.add('border-danger');

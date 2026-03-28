@@ -28,11 +28,53 @@
 </div>
 
 <div class="container pb-5">
-    {% if not submissions %}
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">Whitelist Email</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_whitelist') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control" placeholder="Email address" required>
+                            <button class="btn btn-success" type="submit">Allow</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-danger text-white">Blacklist User</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('admin_blacklist') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <div class="input-group">
+                            <input type="email" name="email" class="form-control" placeholder="Email address" required>
+                            <button class="btn btn-danger" type="submit">Block</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white">Database Management</div>
+                <div class="card-body text-center">
+                    <form method="POST" action="{{ url_for('admin_wipe_db') }}" onsubmit="return confirm('WARNING: This will backup and delete all data. Continue?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn btn-outline-danger w-100">Wipe Database</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if not submissions.items %}
         <div class="alert alert-info text-center">No submissions found in the database.</div>
     {% else %}
         <div class="accordion shadow-sm" id="submissionsAccordion">
-            {% for sub in submissions %}
+            {% for sub in submissions.items %}
             <div class="accordion-item border-0 border-bottom">
                 <h2 class="accordion-header" id="heading-{{ sub.id }}">
                     <button class="accordion-button collapsed py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ sub.id }}" aria-expanded="false" aria-controls="collapse-{{ sub.id }}">
@@ -72,13 +114,21 @@
                                     <div class="col-md-6">
                                         <h6 class="fw-bold text-danger">Issue Log</h6>
                                         <div class="p-2 border rounded bg-white min-vh-25">
-                                            {{ data.issue_log if data.issue_log else '<span class="text-muted italic">No issues reported.</span>'|safe }}
+                                            {% if data.issue_log %}
+                                                {{ data.issue_log }}
+                                            {% else %}
+                                                <span class="text-muted fst-italic">No issues reported.</span>
+                                            {% endif %}
                                         </div>
-                                     </div>
+                                    </div>
                                     <div class="col-md-6">
                                         <h6 class="fw-bold text-info">General Observations</h6>
                                         <div class="p-2 border rounded bg-white min-vh-25">
-                                            {{ data.observations if data.observations else '<span class="text-muted italic">No observations provided.</span>'|safe }}
+                                            {% if data.observations %}
+                                                {{ data.observations }}
+                                            {% else %}
+                                                <span class="text-muted fst-italic">No observations provided.</span>
+                                            {% endif %}
                                         </div>
                                     </div>
                                 </div>
@@ -90,6 +140,18 @@
             </div>
             {% endfor %}
         </div>
+        
+        <nav aria-label="Page navigation" class="mt-4">
+            <ul class="pagination justify-content-center">
+                <li class="page-item {% if not submissions.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_dashboard', page=submissions.prev_num) }}">Previous</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Page {{ submissions.page }} of {{ submissions.pages }}</span></li>
+                <li class="page-item {% if not submissions.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_dashboard', page=submissions.next_num) }}">Next</a>
+                </li>
+            </ul>
+        </nav>
     {% endif %}
 </div>
 
