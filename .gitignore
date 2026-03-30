@@ -5,3 +5,5 @@ qa_database.db
 app.log
 changes.patch
 *backup*.json
+/deployment
+deployment.tar.gz
