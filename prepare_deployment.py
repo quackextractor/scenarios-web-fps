@@ -61,6 +61,7 @@ CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
     print("Created Dockerfile in deployment directory.")
 
 def create_docker_compose():
+    # Simplified to only include the web service
     compose_content = """version: '3.8'
 
 services:
@@ -70,29 +71,7 @@ services:
       - "5000:5000"
     env_file:
       - .env
-    depends_on:
-      - db
-      - redis
     restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: qa_database
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
 """
     with open(os.path.join(DEPLOY_DIR, "docker-compose.yml"), "w") as f:
         f.write(compose_content)
