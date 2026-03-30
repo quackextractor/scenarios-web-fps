@@ -38,7 +38,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ['SECRET_KEY']
 
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
-app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', 'True').lower() in ['true', '1', 't']
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
@@ -149,7 +149,6 @@ def add_security_and_cache_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self' https:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; object-src 'none';"
     response.headers['Strict-Transport-Security'] = "max-age=31536000; includeSubDomains"
 
-    # Fixed: Prevent aggressive caching of authenticated and dynamic content
     if 'Cache-Control' not in response.headers:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
@@ -222,7 +221,6 @@ def webhook():
 def thanks():
     return render_template('thanks.html')
 
-# Fixed: Rate Limiting now relies on the targeted email input
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5 per minute", key_func=lambda: request.form.get('email', '').strip().lower() if request.method == 'POST' else get_remote_address())
 def login():
@@ -259,7 +257,6 @@ def login():
 
     return render_template('login.html')
 
-# Fixed: Rate Limiting linked specifically to session email to eliminate global IP NAT blockage
 @app.route('/verify-otp', methods=['GET', 'POST'])
 @limiter.limit("5 per minute", key_func=lambda: session.get('pending_email', get_remote_address()))
 def verify_otp():
@@ -274,7 +271,6 @@ def verify_otp():
             if now > expiry_timestamp:
                 return render_template('verify_otp.html', error="Your code has expired. Please login again.")
 
-            # Fixed: Prevent Timing Attacks and strict OTP fail wipe to prevent session replay attacks
             if user_otp and hmac.compare_digest(user_otp, otp_in_session):
                 session['user_email'] = session.get('pending_email')
                 session.pop('otp', None)
@@ -290,7 +286,6 @@ def verify_otp():
         return render_template('verify_otp.html', error="Invalid or missing OTP context. Please login again.")
     return render_template('verify_otp.html')
 
-# Fixed: Requires POST to prevent CSRF logout attacks
 @app.route('/logout', methods=['POST'])
 def logout():
     session.clear()
@@ -449,7 +444,6 @@ def admin_login():
 
     return render_template('admin_login.html')
 
-# Fixed: Requires POST to prevent CSRF logout attacks
 @app.route('/admin/logout', methods=['POST'])
 def admin_logout():
     session.clear()
@@ -594,4 +588,4 @@ if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 't']
     with app.app_context():
         db.create_all()
-    app.run(debug=debug_mode)
+    app.run(host='0.0.0.0', debug=debug_mode)
