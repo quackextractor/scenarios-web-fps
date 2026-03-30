@@ -4,3 +4,4 @@ qa_database.db
 .env
 app.log
 changes.patch
+*backup*.json
